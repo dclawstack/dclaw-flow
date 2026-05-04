@@ -1,0 +1,13 @@
+{
+  "app_id": "flow",
+  "name": "DClaw Flow",
+  "version": "0.1.0",
+  "category": "automation",
+  "icon": "/icons/flow.svg",
+  "color": "#10B981",
+  "entrypoint": "/",
+  "api_base": "https://flow.dclawstack.io",
+  "permissions": ["read:workflows", "write:workflows", "read:executions", "write:executions"],
+  "requires_auth": true,
+  "billing_plan": "free"
+}

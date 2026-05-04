@@ -1,0 +1,88 @@
+# Default values for dclaw-flow
+# Replace placeholders before first deploy:
+#   flow    → flow / rag / agent
+#   Flow  → Flow / RAG / Agent
+#   8088      → 8088 / 8090 / 8091
+#   flow.dclawstack.io    → flow.dclawstack.io / rag.dclawstack.io / agent.dclawstack.io
+
+replicaCount: 2
+
+frontend:
+  image:
+    repository: ghcr.io/dclawstack/dclaw-flow
+    tag: latest
+    pullPolicy: IfNotPresent
+  port: 3000
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+backend:
+  image:
+    repository: ghcr.io/dclawstack/dclaw-flow-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  port: 8088
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 250m
+      memory: 512Mi
+  env:
+    - name: PORT
+      value: "8088"
+    - name: DATABASE_URL
+      value: "postgresql+asyncpg://postgres:postgres@dclaw-flow-db-rw:5432/dclaw_flow"
+    - name: REDIS_URL
+      value: "redis://redis.dclaw-core.svc.cluster.local:6379/0"
+    # Add app-specific secrets below (Shield Agent review required)
+    # - name: OPENROUTER_API_KEY
+    #   valueFrom:
+    #     secretKeyRef:
+    #       name: dclaw-flow-secrets
+    #       key: openrouter-api-key
+
+database:
+  enabled: true
+  storage: 10Gi
+  instances: 1
+  resources:
+    requests:
+      memory: 512Mi
+      cpu: 250m
+    limits:
+      memory: 1Gi
+      cpu: 500m
+
+ingress:
+  enabled: true
+  className: nginx
+  host: flow.dclawstack.io
+  tls:
+    enabled: true
+    secretName: dclaw-flow-tls
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+
+service:
+  type: ClusterIP
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podSecurityContext: {}
+securityContext: {}
