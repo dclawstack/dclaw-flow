@@ -1,5 +1,6 @@
 """Workflow CRUD router."""
 
+import asyncio
 import uuid
 from typing import Any
 
@@ -7,9 +8,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from app.database import AsyncSessionLocal, get_db
 from app.models import Execution, Workflow
 from app.schemas import (
+    ExecutionCreate,
+    ExecutionResponse,
     ValidationResponse,
     WorkflowCreate,
     WorkflowListResponse,
@@ -17,6 +20,7 @@ from app.schemas import (
     WorkflowUpdate,
 )
 from app.services.engine import validate_workflow
+from app.services.executor import execute_workflow
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
 
@@ -153,3 +157,41 @@ async def list_workflow_executions(
     )
     total = total_result.scalar() or 0
     return {"items": executions, "total": total}
+
+
+@router.post("/{workflow_id}/execute", response_model=ExecutionResponse)
+async def execute_workflow_endpoint(
+    workflow_id: uuid.UUID,
+    data: ExecutionCreate,
+    db: AsyncSession = Depends(get_db),
+) -> Execution:
+    workflow = await db.get(Workflow, workflow_id)
+    if not workflow:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workflow not found",
+        )
+
+    execution = Execution(
+        workflow_id=workflow_id,
+        status="pending",
+        trigger_source="manual",
+        trigger_payload=data.payload,
+    )
+    db.add(execution)
+    await db.commit()
+    await db.refresh(execution)
+
+    if data.wait_for_completion:
+        await execute_workflow(db, workflow, execution)
+        await db.refresh(execution)
+    else:
+        asyncio.create_task(run_execution(workflow, execution))
+
+    return execution
+
+
+async def run_execution(workflow: Workflow, execution: Execution) -> None:
+    """Run execution in background with a fresh session."""
+    async with AsyncSessionLocal() as session:
+        await execute_workflow(session, workflow, execution)

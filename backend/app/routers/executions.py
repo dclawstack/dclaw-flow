@@ -10,50 +10,11 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import AsyncSessionLocal, get_db
-from app.models import Execution, NodeExecution, Workflow
-from app.schemas import ExecutionCreate, ExecutionListResponse, ExecutionResponse
-from app.services.executor import execute_workflow
+from app.database import get_db
+from app.models import Execution, NodeExecution
+from app.schemas import ExecutionListResponse, ExecutionResponse
 
 router = APIRouter(prefix="/executions", tags=["executions"])
-
-
-@router.post("/{workflow_id}/execute", response_model=ExecutionResponse)
-async def execute_workflow_endpoint(
-    workflow_id: uuid.UUID,
-    data: ExecutionCreate,
-    db: AsyncSession = Depends(get_db),
-) -> Execution:
-    workflow = await db.get(Workflow, workflow_id)
-    if not workflow:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workflow not found",
-        )
-
-    execution = Execution(
-        workflow_id=workflow_id,
-        status="pending",
-        trigger_source="manual",
-        trigger_payload=data.payload,
-    )
-    db.add(execution)
-    await db.commit()
-    await db.refresh(execution)
-
-    if data.wait_for_completion:
-        await execute_workflow(db, workflow, execution)
-        await db.refresh(execution)
-    else:
-        asyncio.create_task(run_execution(workflow, execution))
-
-    return execution
-
-
-async def run_execution(workflow: Workflow, execution: Execution) -> None:
-    """Run execution in background with a fresh session."""
-    async with AsyncSessionLocal() as session:
-        await execute_workflow(session, workflow, execution)
 
 
 @router.get("/{execution_id}", response_model=ExecutionResponse)

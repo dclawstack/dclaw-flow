@@ -45,7 +45,7 @@ export const api = {
     ),
   executeWorkflow: (id: string, payload?: unknown) =>
     fetchJson<import("@/types").Execution>(
-      `/api/v1/flows/executions/${id}/execute`,
+      `/api/v1/flows/workflows/${id}/execute`,
       {
         method: "POST",
         body: JSON.stringify({ payload, wait_for_completion: false }),
