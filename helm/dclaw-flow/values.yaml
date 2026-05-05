@@ -49,7 +49,7 @@ backend:
     #       key: openrouter-api-key
 
 database:
-  enabled: true
+  enabled: false
   storage: 10Gi
   instances: 1
   resources:
@@ -61,11 +61,11 @@ database:
       cpu: 500m
 
 ingress:
-  enabled: true
+  enabled: false
   className: nginx
   host: flow.dclawstack.io
   tls:
-    enabled: true
+    enabled: false
     secretName: dclaw-flow-tls
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
