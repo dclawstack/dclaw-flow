@@ -36,3 +36,7 @@ Thumbs.db
 
 # Docker
 postgres_data/
+helm/*/Chart.lock
+helm/*/charts/
+backend/.venv/
+backend/*.db
