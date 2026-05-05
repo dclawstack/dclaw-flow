@@ -4,10 +4,8 @@ WORKDIR /app
 
 RUN pip install --no-cache-dir uvicorn[standard]
 
-COPY pyproject.toml ./
-RUN pip install --no-cache-dir -e .
-
 COPY . .
+RUN pip install --no-cache-dir .
 
 EXPOSE 8088
 
