@@ -4,16 +4,16 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: flow
-      POSTGRES_PASSWORD: flow
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
       POSTGRES_DB: dclaw_flow
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U flow -d dclaw_flow"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U postgres -d dclaw_flow"]
+      interval: 10s
       timeout: 5s
       retries: 5
 
@@ -21,34 +21,37 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    ports:
-      - "8088:8088"
     environment:
-      DATABASE_URL: postgresql+asyncpg://flow:flow@postgres:5432/dclaw_flow
-      APP_ENV: development
-      LOG_LEVEL: info
-      CORS_ORIGINS: http://localhost:3000
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/dclaw_flow
+      APP_ENV: production
+    ports:
+      - "8153:8153"
     depends_on:
       postgres:
         condition: service_healthy
-    volumes:
-      - ./backend:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8088 --reload
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8153/health/')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8153
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8088
+      PORT: 3003
+    ports:
+      - "3003:3003"
     depends_on:
       - backend
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    command: npm run dev
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3003/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
 volumes:
   postgres_data:

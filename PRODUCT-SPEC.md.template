@@ -1,0 +1,96 @@
+# PRODUCT-SPEC: {APP_NAME}
+
+> This document tells your coding agents WHAT to build.
+> It is separate from `AGENTS.md` (HOW to build) and `PLAN-v1.2.md` (WHEN to build).
+
+## Overview
+
+**App Name:** {APP_NAME}
+**Domain:** (e.g., CRM, Finance, HR, Inventory, Project Management)
+**Target User:** (e.g., sales teams, accountants, HR managers, warehouse staff)
+
+## Core Entities
+
+List the main data models. Each entity should have:
+- Fields (name, type, required/optional)
+- Relationships to other entities
+
+### Example: Customer
+```
+Customer
+├── id: UUID (PK)
+├── name: str (required)
+├── email: str (unique, required)
+├── phone: str (optional)
+├── company: str (optional)
+├── status: enum ["lead", "active", "churned"] (default: "lead")
+├── created_at: datetime
+└── updated_at: datetime
+```
+
+### Example: Deal
+```
+Deal
+├── id: UUID (PK)
+├── customer_id: UUID (FK → Customer)
+├── title: str (required)
+├── value: float (required)
+├── stage: enum ["prospecting", "negotiation", "closed_won", "closed_lost"]
+├── probability: int (0-100)
+├── expected_close_date: date (optional)
+├── created_at: datetime
+└── updated_at: datetime
+```
+
+## User Stories / Screens
+
+### Screen 1: Dashboard
+- Show summary cards (total customers, open deals, revenue, conversion rate)
+- Recent activity feed
+- Quick action buttons
+
+### Screen 2: Entity List
+- Table view with pagination, search, filters
+- Bulk actions (delete, export)
+- "Add new" button
+
+### Screen 3: Entity Detail
+- Form with all fields
+- Related items (e.g., deals for a customer)
+- Edit / delete actions
+- Activity history
+
+### Screen 4: (Add more as needed)
+
+## AI Features
+
+Describe what AI capabilities the app should have:
+- **Data analysis:** (e.g., "Predict deal close probability")
+- **Content generation:** (e.g., "Generate follow-up email")
+- **Summarization:** (e.g., "Summarize customer communication")
+- **Classification:** (e.g., "Auto-categorize support tickets")
+
+## API Endpoints (v1.0)
+
+List the REST endpoints needed:
+
+```
+GET    /api/v1/customers          → List customers
+POST   /api/v1/customers          → Create customer
+GET    /api/v1/customers/{id}     → Get customer
+PUT    /api/v1/customers/{id}     → Update customer
+DELETE /api/v1/customers/{id}     → Delete customer
+GET    /api/v1/deals              → List deals
+POST   /api/v1/deals              → Create deal
+GET    /api/v1/deals/{id}         → Get deal
+PUT    /api/v1/deals/{id}         → Update deal
+DELETE /api/v1/deals/{id}         → Delete deal
+GET    /api/v1/dashboard          → Dashboard stats
+```
+
+## Non-Functional Requirements
+
+- Backend tests: 70%+ coverage
+- Frontend: Responsive, Tailwind + shadcn/ui
+- Docker: All services start with `docker compose up -d`
+- No mock data — everything persisted to PostgreSQL

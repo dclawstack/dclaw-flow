@@ -1,0 +1,4 @@
+DClaw App deployed!
+
+Backend: {{ include "dclaw-app.fullname" . }}-backend
+Frontend: {{ include "dclaw-app.fullname" . }}-frontend
