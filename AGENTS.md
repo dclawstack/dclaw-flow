@@ -7,157 +7,145 @@
 
 **DClaw Flow** is a vertical SaaS application built on the DClaw Stack.
 
-- **Backend Port:** `8002` (FastAPI)
-- **Frontend Port:** `3002` (Next.js)
+- **Backend Port:** `8088` (FastAPI)
+- **Frontend Port:** `3003` (Next.js)
 - **Database:** `dclaw_flow` (PostgreSQL)
-- **Base API Path:** `/api/v1`
+- **Base API Path:** `/api/v1/flows`
 
 ## Architecture Lock — DO NOT CHANGE
 
 These are non-negotiable. If an agent suggests changing them, reject it.
 
 ### Backend
-- **FastAPI** with `lifespan` handler
-- **SQLAlchemy 2.0** — `DeclarativeBase` from `app.models.base`, NOT `declarative_base()`. Do NOT use `MappedAsDataclass`.
-- **Pydantic v2** schemas with `ConfigDict(from_attributes=True)`
+- **FastAPI** with `lifespan` handler (`app/main.py`)
+- **SQLAlchemy 2.0** — `Base = declarative_base()` lives in `app/database.py`; models import it via `from app.database import Base` and use `Mapped`/`mapped_column`. Do NOT use `MappedAsDataclass`. Do NOT introduce a second `Base` or an `app/models/` package — one once shadowed `app/models.py` and broke every import.
+- **Pydantic v2** schemas with `ConfigDict(from_attributes=True)` in a single `app/schemas.py`
 - **Async SQLAlchemy** — `create_async_engine` + `AsyncSession`
-- **Repository pattern** — all DB access through `app/repositories/`
-- **Dependency injection** — `Depends(get_db)`, never manual `AsyncSession`
-- **NO MOCK DATA** — never use in-memory `dict`s
+- **DB access in routers/services** — `Depends(get_db)` + SQLAlchemy directly; business logic in `app/services/`. There is **no** repository layer.
+- **NO MOCK DATA** — never use in-memory `dict`s; persist to Postgres
 - **pytest-asyncio==0.24.0** — pinned version, do not upgrade
 
 ### Frontend
-- **Next.js 14+ App Router**
-- **Tailwind CSS** + **custom UI components** (pre-built in `src/components/ui/`)
-- **API client** in `src/lib/api.ts` — typed fetch wrapper
+- **Next.js 14+ App Router** — pages in `frontend/app/`
+- **Tailwind CSS** utility classes directly; `cn()` helper in `frontend/lib/utils.ts` (clsx + tailwind-merge); icons via `lucide-react`
+- **Components** in `frontend/components/` — domain components (there is **no** `src/` dir and **no** pre-built `ui/` primitive library)
+- **API client** in `frontend/lib/api.ts` — typed fetch wrapper
 - **Environment variables** — `NEXT_PUBLIC_API_URL` baked at build time. Dockerfile MUST declare `ARG NEXT_PUBLIC_API_URL`.
-- **DO NOT install shadcn CLI** — use the pre-built components in `src/components/ui/`
+- **DO NOT install the shadcn CLI or `@base-ui/react`** — they break the Tailwind v3 build; build components with plain Tailwind + `lucide-react`
 
 ### Docker
-- **Backend:** `python:3.11-slim`, non-root `appuser`, healthcheck with `python urllib.request.urlopen()`
-- **Frontend:** `node:20-alpine`, port `3002`
+- **Backend:** `python:3.11-slim`, non-root `appuser`, port `8088`, healthcheck with `python urllib.request.urlopen('http://localhost:8088/health')`
+- **Frontend:** `node:20-alpine`, port `3003`
 - **Compose:** container port MUST match `EXPOSE`/`ENV PORT`
 
 ## Directory Structure
 
+> The code is **flat** — single-file `models.py`/`schemas.py`, no `api/`,
+> `core/`, `repositories/`, or `models/` package; the frontend has **no** `src/`.
+
 ```
-Flow/
+dclaw-flow/
 ├── backend/
 │   ├── app/
-│   │   ├── api/
-│   │   │   ├── main.py
-│   │   │   ├── routes/health.py
-│   │   │   └── v1/               # App-specific routers
-│   │   ├── core/
-│   │   │   ├── config.py
-│   │   │   └── database.py       # Base(DeclarativeBase), engine, get_db
-│   │   ├── models/
-│   │   │   ├── base.py
-│   │   │   └── ...               # App-specific models
-│   │   ├── repositories/         # CRUD layer
-│   │   ├── schemas/              # Pydantic v2
-│   │   └── services/             # Business logic / AI
-│   ├── alembic/
-│   ├── tests/
-│   │   ├── conftest.py           # Test DB override, client fixture
-│   │   └── __init__.py           # REQUIRED for pytest discovery
-│   └── Dockerfile
+│   │   ├── main.py               # FastAPI app, lifespan, /health, router includes
+│   │   ├── config.py             # Settings (pydantic-settings)
+│   │   ├── database.py           # Base = declarative_base(), engine, AsyncSessionLocal, get_db
+│   │   ├── models.py             # Workflow, Execution, NodeExecution
+│   │   ├── schemas.py            # Pydantic v2 request/response models
+│   │   ├── seed.py               # sample workflow on first boot
+│   │   ├── core/utils.py         # utc_now() etc.
+│   │   ├── routers/              # workflows, executions, webhooks, copilot (prefix /api/v1/flows)
+│   │   └── services/             # engine, executor, copilot, schema_inference, anomaly, retention
+│   ├── alembic/versions/         # 001_initial, 002_webhook_path_index, 003_execution_status_index
+│   ├── tests/                    # conftest.py + test_*.py (pytest-asyncio, httpx ASGITransport)
+│   ├── Dockerfile                # python:3.11-slim, EXPOSE 8088
+│   ├── pyproject.toml
+│   └── requirements.txt
 ├── frontend/
-│   ├── src/
-│   │   ├── app/                  # Next.js App Router
-│   │   ├── components/ui/        # Pre-built UI components (see below)
-│   │   │   ├── button.tsx
-│   │   │   ├── card.tsx
-│   │   │   ├── input.tsx
-│   │   │   ├── label.tsx
-│   │   │   ├── badge.tsx
-│   │   │   ├── select.tsx
-│   │   │   ├── dialog.tsx
-│   │   │   ├── table.tsx
-│   │   │   ├── tabs.tsx
-│   │   │   └── avatar.tsx
-│   │   └── lib/
-│   │       ├── api.ts
-│   │       └── utils.ts          # cn() helper
-│   └── Dockerfile
-├── docker-compose.yml
-├── .github/workflows/ci.yml      # DO NOT DELETE
+│   ├── app/                      # Next.js App Router (workflows, workflows/[id], executions, executions/[id])
+│   ├── components/               # flow-canvas, flow-node, node-palette, property-panel, copilot-widget
+│   ├── lib/                      # api.ts (typed fetch), utils.ts (cn())
+│   ├── types/index.ts
+│   ├── public/dclaw-manifest.json
+│   └── Dockerfile                # node:20-alpine, EXPOSE 3003
+├── docker-compose.yml            # postgres / backend(8088) / frontend(3003)
+├── .github/workflows/            # ci.yml (DO NOT DELETE) + Claude Code Action
 ├── helm/
 └── .env.example
 ```
 
-## Pre-Built UI Components
+## UI Components
 
-The scaffold includes working UI components in `frontend/src/components/ui/`. **Use these directly.** Do NOT install shadcn CLI or `@base-ui/react`.
+There is **no pre-built `ui/` primitive library** (no shadcn). The UI is built from
+**plain Tailwind** utility classes plus `lucide-react` icons, with the `cn()` helper in
+`frontend/lib/utils.ts` (clsx + tailwind-merge). Domain components live in
+`frontend/components/`:
 
-**Required dependency:** `tailwindcss-animate` must be in `package.json` dependencies (not devDependencies) because `tailwind.config.ts` imports it via `plugins: [require("tailwindcss-animate")]`.
+- `flow-canvas.tsx` — the React Flow (`@xyflow/react`) editor canvas + dagre auto-layout
+- `flow-node.tsx` — custom per-type node (color + icon), validation/cleanup highlights
+- `node-palette.tsx` — add-node sidebar
+- `property-panel.tsx` — selected-node config + trigger/webhook config + Save
+- `copilot-widget.tsx` — floating AI Copilot chat (mounted in `app/layout.tsx`)
 
-Available components:
-- `Button` — variants: default, destructive, outline, secondary, ghost, link
-- `Card` — Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter
-- `Input` — standard text input
-- `Label` — form label
-- `Badge` — variants: default, secondary, destructive, outline
-- `Select` — native select with onValueChange support
-- `Dialog` — modal with trigger, content, header, title
-- `Table` — Table, TableHeader, TableBody, TableRow, TableHead, TableCell
-- `Tabs` — Tabs, TabsList, TabsTrigger, TabsContent
-- `Avatar` — Avatar, AvatarImage, AvatarFallback
+Build new UI with Tailwind directly. Do NOT install the shadcn CLI or `@base-ui/react` —
+they break the Tailwind v3 build. The Tailwind plugin in use is `@tailwindcss/forms`
+(see `tailwind.config.ts`).
 
 ## Anti-Patterns — NEVER DO
 
 | Anti-Pattern | Why It Breaks Things | Correct Alternative |
 |--------------|---------------------|---------------------|
-| `declarative_base()` in `database.py` | Separate metadata → zero tables | `from app.models.base import Base` |
+| A second `Base` / an `app/models/` package | Shadows `app/models.py` → `ImportError` on `from app.models import ...`; backend won't start | Keep the single `Base = declarative_base()` in `app/database.py` |
 | `curl` in healthcheck on `python:*-slim` | No `curl` → silent failure | `python -c "import urllib.request; urllib.request.urlopen(...)"` |
-| In-memory `MOCK_*` dicts | Data lost on restart | Create repository + real DB |
+| In-memory `MOCK_*` dicts | Data lost on restart | Persist via a real model + `Depends(get_db)` |
 | Missing `ARG NEXT_PUBLIC_API_URL` | Wrong API URL baked in | Add `ARG NEXT_PUBLIC_API_URL` before build |
 | Manual `get_db()` with `__anext__()` | Session leaks | `Depends(get_db)` |
 | Hardcoded `localhost:PORT` | Breaks Docker/K8s | Use `process.env.NEXT_PUBLIC_API_URL` |
 | No alembic migration for new models | Schema drift | `alembic revision --autogenerate` |
-| **Installing `shadcn` CLI v4** | Breaks Tailwind v3 build | Use pre-built components in scaffold |
-| **Using `@base-ui/react`** | Incompatible with Tailwind v3 | Use pre-built components in scaffold |
+| **Installing `shadcn` CLI v4** | Breaks Tailwind v3 build | Build with plain Tailwind + `lucide-react` |
+| **Using `@base-ui/react`** | Incompatible with Tailwind v3 | Build with plain Tailwind + `lucide-react` |
 | **Using non-standard Postgres port in tests** | CI service maps 5432 only | Always use `localhost:5432` in conftest.py |
 | **Upgrading `pytest-asyncio`** | v1.3.0 breaks fixture scoping | Keep `pytest-asyncio==0.24.0` pinned |
 | **Deleting `.github/workflows/ci.yml`** | No CI runs, no quality gate | Leave CI workflow intact |
-| **Missing `src/lib/utils.ts`** | Pre-built UI components fail to import `cn()` | Already in scaffold — do NOT delete |
+| **Missing `frontend/lib/utils.ts`** | Components fail to import `cn()` | Already in scaffold — do NOT delete |
 | **Using `MappedAsDataclass` in `Base`** | Relationship/foreign-key sync conflicts on flush | Use plain `DeclarativeBase` only |
 | **`default_factory` in `mapped_column()`** | SQLAlchemy interprets it as dataclass config; throws `ArgumentError` on plain `DeclarativeBase` | Use `default=` with a callable (e.g., `default=uuid.uuid4`) |
 | **Timezone-aware `datetime` in models** | `DataError` with `TIMESTAMP WITHOUT TIME ZONE` | Use `utc_now()` from `app.core.utils` or `datetime.now(timezone.utc).replace(tzinfo=None)` |
 
 ## Database Rules
 
-1. All models MUST inherit from `Base` in `app.models.base`
-2. All models MUST use `Mapped[...]` and `mapped_column()`
-3. **Never use `default_factory=` in `mapped_column()`** — use `default=` instead
-3. Relationships MUST specify `lazy="selectin"`
+1. All models MUST import `Base` from `app.database` and use `Mapped[...]` + `mapped_column()`
+2. **Never use `default_factory=` in `mapped_column()`** — use `default=` with a callable
+3. Relationships SHOULD specify `lazy="selectin"` (async lazy-loads otherwise raise `MissingGreenlet` during response serialization)
 4. All new tables MUST get an alembic migration
-5. Use `ondelete="CASCADE"` for child tables
-6. Use `ondelete="SET NULL"` for optional references
+5. Use `ondelete="CASCADE"` for child tables; `ondelete="SET NULL"` for optional references
+
+> ⚠️ Boot currently runs `Base.metadata.create_all` (in `main.py` lifespan), which
+> creates tables but **not** indexes that exist only in migrations (e.g. the webhook-path
+> index `002` and execution-status index `003`). For those to exist in a deployment you must
+> run `alembic upgrade head`. Reconciling boot to migrations is an open decision.
 
 ## How to Add a Feature
 
-1. **Read this file** and `PLAN-v1.2.md`
+1. **Read this file** and `REVISED-PRD.md` (the authoritative spec; `PLAN-v1.2.md` is a template)
 2. **Backend:**
-   - Add/update model in `app/models/`
-   - Add/update schema in `app/schemas/`
-   - Add repository in `app/repositories/`
-   - Add/update router in `app/api/v1/`
-   - Add tests in `tests/`
-   - Generate alembic migration
+   - Add/update models in `app/models.py`
+   - Add/update schemas in `app/schemas.py`
+   - Business logic in `app/services/`
+   - Add/update a router in `app/routers/` (mounted under `/api/v1/flows` in `app/main.py`)
+   - Add tests in `tests/` and an alembic migration in `alembic/versions/` for new tables/indexes
 3. **Frontend:**
-   - Add API types/functions to `src/lib/api.ts`
-   - Add page in `src/app/` or component using pre-built UI components
-4. **Docker:** Verify `docker compose config` and `docker compose up -d`
-5. **Commit** with conventional commit message
+   - Add API types in `frontend/types/index.ts` and client methods in `frontend/lib/api.ts`
+   - Add a page in `frontend/app/` or a component in `frontend/components/` (plain Tailwind + `lucide-react`)
+4. **Verify:** backend `pytest`, frontend `tsc --noEmit` + `next build`, and `docker compose config`
+5. **Commit** with a conventional commit message
 
 ## Testing Requirements
 
-- Every new repository MUST have tests
-- Every new router endpoint MUST be covered
+- Every new service and router endpoint MUST be covered
 - Use `pytest-asyncio` with `async` test functions and `@pytest.mark.asyncio`
 - Use `httpx.AsyncClient` with `ASGITransport`
-- Override `get_db` dependency with test session in `conftest.py`
+- `conftest.py` overrides `get_db` and builds the schema with `Base.metadata.create_all`
 - Tests MUST use `localhost:5432` for PostgreSQL (CI requirement)
 
 ## Port Registry
