@@ -83,14 +83,9 @@ async def update_workflow(
             detail="Workflow not found",
         )
 
+    # model_dump already recurses into NodeSchema/EdgeSchema/TriggerConfig, so
+    # nodes/edges/trigger arrive as plain dicts ready for the JSON columns.
     update_data = data.model_dump(exclude_unset=True)
-    if "nodes" in update_data and update_data["nodes"] is not None:
-        update_data["nodes"] = [node.model_dump() for node in update_data["nodes"]]
-    if "edges" in update_data and update_data["edges"] is not None:
-        update_data["edges"] = [edge.model_dump() for edge in update_data["edges"]]
-    if "trigger" in update_data and update_data["trigger"] is not None:
-        update_data["trigger"] = update_data["trigger"].model_dump()
-
     for key, value in update_data.items():
         setattr(workflow, key, value)
 

@@ -124,7 +124,7 @@ status: P0
 | # | Feature | Description | AI Component | Acceptance Criteria |
 |---|---------|-------------|--------------|---------------------|
 | P0.1 | **AI Flow Copilot** ✅ | Describe automation in natural language; AI builds the workflow. | LLM workflow generation + node suggestion | Generate valid workflow from description in <10s |
-| P0.2 | **Visual Workflow Builder** | Drag-and-drop canvas for building multi-step automations. | AI layout optimization + path simplification | Canvas supports 50+ nodes; real-time validation |
+| P0.2 | **Visual Workflow Builder** ✅ | Drag-and-drop canvas for building multi-step automations. | AI layout optimization + path simplification | Canvas supports 50+ nodes; real-time validation |
 | P0.3 | **HTTP Webhook Triggers** | Trigger flows from external services via webhooks. | AI webhook schema inference + payload validation | Webhook ingestion latency <100ms; auto-generate OpenAPI spec |
 | P0.4 | **Execution History & Logs** | Full audit trail of every workflow run with step-level logs. | AI anomaly detection in execution patterns | Retain 90 days of history; query by status, date, or step |
 
@@ -143,6 +143,19 @@ status: P0
 > workflows), suggests next actions ✅, accessible from every page ✅, Ollama
 > fallback ✅. RAG (§9.2) is N/A — no knowledge base for this app per the
 > "only if RAG/semantic search" stack rule.
+
+> **P0.2 status (implemented):** The React Flow canvas
+> (`frontend/components/flow-canvas.tsx`) now persists drag positions, node and
+> edge deletions through Save (fixed a backend PATCH 500 in
+> `workflows.py` that made saving the graph impossible). Real-time validation
+> runs on change (`frontend/lib/validation.ts`, mirroring the engine rules) with
+> inline red/amber node highlights and a Save error badge; the server `/validate`
+> is the authority on Save. Deterministic **auto-layout** via dagre
+> (`frontend/lib/layout.ts`) arranges 50+ nodes (LLM-driven layout deferred to
+> P1). Per-type colored nodes (`frontend/components/flow-node.tsx`).
+> **Path simplification** ships as non-destructive cleanup hints — unreachable
+> nodes are highlighted and listed with per-node delete (mirrors
+> `engine.find_unreachable_nodes`, tested). Save UX: toast + dirty-state.
 
 ---
 
