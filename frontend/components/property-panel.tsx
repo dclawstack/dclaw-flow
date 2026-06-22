@@ -5,10 +5,42 @@ import type { FlowNode } from "@/types";
 interface PropertyPanelProps {
   node: FlowNode | null;
   onUpdate: (node: FlowNode) => void;
+  onDelete: (id: string) => void;
   onSave: () => void;
+  dirty: boolean;
+  errorCount: number;
 }
 
-export function PropertyPanel({ node, onUpdate, onSave }: PropertyPanelProps) {
+function SaveButton({
+  onSave,
+  dirty,
+  errorCount,
+}: Pick<PropertyPanelProps, "onSave" | "dirty" | "errorCount">) {
+  return (
+    <button
+      onClick={onSave}
+      disabled={!dirty}
+      className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-flow-600 px-3 py-2 text-sm font-medium text-white hover:bg-flow-700 disabled:opacity-50"
+    >
+      {dirty && <span className="h-2 w-2 rounded-full bg-white" aria-hidden />}
+      {dirty ? "Save Workflow" : "Saved"}
+      {errorCount > 0 && (
+        <span className="rounded-full bg-red-500 px-1.5 text-[10px]">
+          {errorCount}
+        </span>
+      )}
+    </button>
+  );
+}
+
+export function PropertyPanel({
+  node,
+  onUpdate,
+  onDelete,
+  onSave,
+  dirty,
+  errorCount,
+}: PropertyPanelProps) {
   if (!node) {
     return (
       <div className="w-64 border-l bg-gray-50 p-4">
@@ -16,12 +48,7 @@ export function PropertyPanel({ node, onUpdate, onSave }: PropertyPanelProps) {
           Properties
         </h3>
         <p className="text-sm text-gray-400">Select a node to edit</p>
-        <button
-          onClick={onSave}
-          className="mt-6 w-full rounded-lg bg-flow-600 px-3 py-2 text-sm font-medium text-white hover:bg-flow-700"
-        >
-          Save Workflow
-        </button>
+        <SaveButton onSave={onSave} dirty={dirty} errorCount={errorCount} />
       </div>
     );
   }
@@ -168,11 +195,13 @@ export function PropertyPanel({ node, onUpdate, onSave }: PropertyPanelProps) {
       )}
 
       <button
-        onClick={onSave}
-        className="mt-4 w-full rounded-lg bg-flow-600 px-3 py-2 text-sm font-medium text-white hover:bg-flow-700"
+        onClick={() => onDelete(node.id)}
+        className="mt-4 w-full rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"
       >
-        Save Workflow
+        Delete Node
       </button>
+
+      <SaveButton onSave={onSave} dirty={dirty} errorCount={errorCount} />
     </div>
   );
 }

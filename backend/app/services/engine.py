@@ -64,3 +64,37 @@ def topological_sort(
         raise ValueError("Workflow contains cycles")
 
     return result
+
+
+def find_unreachable_nodes(
+    nodes: list[dict[str, Any]],
+    edges: list[dict[str, Any]],
+) -> list[str]:
+    """Return node IDs not reachable from the single trigger via directed edges.
+
+    Used for non-destructive "cleanup" hints. Returns an empty list when there
+    is not exactly one trigger (entry point is undefined — validation reports
+    that separately).
+    """
+    node_ids = {node["id"] for node in nodes}
+    triggers = [node["id"] for node in nodes if node.get("type") == "trigger"]
+    if len(triggers) != 1:
+        return []
+
+    graph: dict[str, list[str]] = defaultdict(list)
+    for edge in edges:
+        source = edge.get("source")
+        target = edge.get("target")
+        if source in node_ids and target in node_ids:
+            graph[source].append(target)
+
+    seen: set[str] = set()
+    queue = [triggers[0]]
+    while queue:
+        current = queue.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        queue.extend(graph[current])
+
+    return [node_id for node_id in node_ids if node_id not in seen]
