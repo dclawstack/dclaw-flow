@@ -62,4 +62,28 @@ export const api = {
       `/api/v1/flows/executions/${id}/cancel`,
       { method: "POST" },
     ),
+  generateWorkflow: (description: string, persist = true) =>
+    fetchJson<import("@/types").CopilotGenerateResponse>(
+      "/api/v1/flows/copilot/generate",
+      {
+        method: "POST",
+        body: JSON.stringify({ description, persist }),
+      },
+    ),
+  suggestNodes: (workflowId: string) =>
+    fetchJson<{ suggestions: import("@/types").NodeSuggestion[] }>(
+      `/api/v1/flows/copilot/suggest/${workflowId}`,
+      { method: "POST" },
+    ),
+  chatCopilot: (
+    message: string,
+    history: import("@/types").CopilotChatMessage[] = [],
+  ) =>
+    fetchJson<import("@/types").CopilotChatResponse>(
+      "/api/v1/flows/copilot/chat",
+      {
+        method: "POST",
+        body: JSON.stringify({ message, history }),
+      },
+    ),
 };

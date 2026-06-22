@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { CopilotWidget } from "@/components/copilot-widget";
 
 export const metadata: Metadata = {
   title: "DClaw Flow",
@@ -30,6 +31,7 @@ export default function RootLayout({
           </div>
         </nav>
         <main className="p-6">{children}</main>
+        <CopilotWidget />
       </body>
     </html>
   );

@@ -123,10 +123,26 @@ status: P0
 
 | # | Feature | Description | AI Component | Acceptance Criteria |
 |---|---------|-------------|--------------|---------------------|
-| P0.1 | **AI Flow Copilot** | Describe automation in natural language; AI builds the workflow. | LLM workflow generation + node suggestion | Generate valid workflow from description in <10s |
+| P0.1 | **AI Flow Copilot** ✅ | Describe automation in natural language; AI builds the workflow. | LLM workflow generation + node suggestion | Generate valid workflow from description in <10s |
 | P0.2 | **Visual Workflow Builder** | Drag-and-drop canvas for building multi-step automations. | AI layout optimization + path simplification | Canvas supports 50+ nodes; real-time validation |
 | P0.3 | **HTTP Webhook Triggers** | Trigger flows from external services via webhooks. | AI webhook schema inference + payload validation | Webhook ingestion latency <100ms; auto-generate OpenAPI spec |
 | P0.4 | **Execution History & Logs** | Full audit trail of every workflow run with step-level logs. | AI anomaly detection in execution patterns | Retain 90 days of history; query by status, date, or step |
+
+> **P0.1 status (implemented):** Endpoints under `/api/v1/flows/copilot`:
+> `POST /generate` turns a natural-language description into a validated
+> workflow (and persists it); `POST /suggest/{workflow_id}` recommends next
+> nodes; `POST /chat` is a contextual assistant grounded in the user's
+> workflows that answers questions and drafts workflows from chat. Provider
+> order is local Ollama → cloud OpenRouter → a deterministic heuristic fallback
+> (`COPILOT_PROVIDER` env), so it always responds offline / in CI. UI: a
+> "Build with AI Copilot" panel on `frontend/app/workflows/new` plus a floating
+> **Copilot chat widget on every page** (`frontend/components/copilot-widget.tsx`,
+> mounted in the root layout). Service: `backend/app/services/copilot.py`.
+>
+> Mandate (§9) coverage: contextual awareness ✅ (chat is grounded in the user's
+> workflows), suggests next actions ✅, accessible from every page ✅, Ollama
+> fallback ✅. RAG (§9.2) is N/A — no knowledge base for this app per the
+> "only if RAG/semantic search" stack rule.
 
 ---
 
