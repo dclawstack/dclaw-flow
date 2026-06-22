@@ -86,4 +86,17 @@ export const api = {
         body: JSON.stringify({ message, history }),
       },
     ),
+  getWebhookSchema: (path: string) =>
+    fetchJson<{
+      webhook_id: string;
+      workflow_id: string;
+      schema: Record<string, unknown> | null;
+    }>(`/api/v1/flows/webhooks/${path}/schema`),
+};
+
+export const webhookUrl = (path: string) => {
+  const base =
+    process.env.NEXT_PUBLIC_API_URL ||
+    (typeof window !== "undefined" ? window.location.origin : "");
+  return `${base}/api/v1/flows/webhooks/${path}`;
 };

@@ -35,7 +35,21 @@ export default function WorkflowEditorPage() {
             {workflow.description || "No description"}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={async () => {
+              const next = workflow.status === "active" ? "paused" : "active";
+              await api.updateWorkflow(workflow.id, { status: next });
+              setWorkflow((prev) => (prev ? { ...prev, status: next } : prev));
+            }}
+            className={`rounded-lg px-4 py-2 text-sm font-medium ${
+              workflow.status === "active"
+                ? "border border-yellow-300 bg-yellow-50 text-yellow-700 hover:bg-yellow-100"
+                : "border bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+          >
+            {workflow.status === "active" ? "Pause" : "Activate"}
+          </button>
           <button
             onClick={async () => {
               const ex = await api.executeWorkflow(workflow.id);

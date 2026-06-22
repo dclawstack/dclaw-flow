@@ -125,7 +125,7 @@ status: P0
 |---|---------|-------------|--------------|---------------------|
 | P0.1 | **AI Flow Copilot** ✅ | Describe automation in natural language; AI builds the workflow. | LLM workflow generation + node suggestion | Generate valid workflow from description in <10s |
 | P0.2 | **Visual Workflow Builder** ✅ | Drag-and-drop canvas for building multi-step automations. | AI layout optimization + path simplification | Canvas supports 50+ nodes; real-time validation |
-| P0.3 | **HTTP Webhook Triggers** | Trigger flows from external services via webhooks. | AI webhook schema inference + payload validation | Webhook ingestion latency <100ms; auto-generate OpenAPI spec |
+| P0.3 | **HTTP Webhook Triggers** ✅ | Trigger flows from external services via webhooks. | AI webhook schema inference + payload validation | Webhook ingestion latency <100ms; auto-generate OpenAPI spec |
 | P0.4 | **Execution History & Logs** | Full audit trail of every workflow run with step-level logs. | AI anomaly detection in execution patterns | Retain 90 days of history; query by status, date, or step |
 
 > **P0.1 status (implemented):** Endpoints under `/api/v1/flows/copilot`:
@@ -156,6 +156,20 @@ status: P0
 > **Path simplification** ships as non-destructive cleanup hints — unreachable
 > nodes are highlighted and listed with per-node delete (mirrors
 > `engine.find_unreachable_nodes`, tested). Save UX: toast + dirty-state.
+
+> **P0.3 status (implemented):** Webhooks now accept **raw arbitrary JSON**
+> (no `{"data":...}` wrapper) at `POST /api/v1/flows/webhooks/{path}`, matched
+> by an **indexed** lookup (`trigger -> 'config' ->> 'path'`, migration `002`)
+> instead of a scan — single-request ingestion is well under 100ms (tested).
+> **Deterministic schema inference** (`services/schema_inference.py`): the first
+> payload defines the schema (stored on `trigger.config.inferred_schema`); later
+> payloads are validated and **flagged but never blocked** (response carries
+> `schema_valid`/`schema_errors`). `GET /webhooks/{path}/schema` exposes it (the
+> auto-OpenAPI fragment). HMAC signature verification is opt-in via a secret.
+> UI: the property panel configures path/secret, shows a **copyable webhook URL**
+> and the inferred schema; the editor has an **Activate/Pause** toggle (webhooks
+> fire only for active workflows). LLM-assisted inference + replay protection are
+> deferred to P1.
 
 ---
 

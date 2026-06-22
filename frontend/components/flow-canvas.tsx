@@ -22,7 +22,7 @@ import { layoutNodes } from "@/lib/layout";
 import { NodePalette } from "./node-palette";
 import { PropertyPanel } from "./property-panel";
 import { FlowNodeCard, NodeHighlightContext } from "./flow-node";
-import type { FlowEdge, FlowNode, Workflow } from "@/types";
+import type { FlowEdge, FlowNode, TriggerConfig, Workflow } from "@/types";
 
 interface FlowCanvasProps {
   workflow: Workflow;
@@ -105,8 +105,14 @@ export function FlowCanvas({ workflow, onChange }: FlowCanvasProps) {
     loadedId.current = workflow.id;
     setNodes(toRfNodes(workflow.nodes));
     setEdges(toRfEdges(workflow.edges));
-    setSavedJson(JSON.stringify({ nodes: workflow.nodes, edges: workflow.edges }));
-  }, [workflow.id, workflow.nodes, workflow.edges, setNodes, setEdges]);
+    setSavedJson(
+      JSON.stringify({
+        nodes: workflow.nodes,
+        edges: workflow.edges,
+        trigger: workflow.trigger,
+      }),
+    );
+  }, [workflow.id, workflow.nodes, workflow.edges, workflow.trigger, setNodes, setEdges]);
 
   // Bubble the canonical graph up to the parent whenever the canvas changes.
   useEffect(() => {
@@ -140,8 +146,18 @@ export function FlowCanvas({ workflow, onChange }: FlowCanvasProps) {
   const currentJson = JSON.stringify({
     nodes: fromRfNodes(nodes),
     edges: fromRfEdges(edges),
+    trigger: workflow.trigger,
   });
   const dirty = savedJson !== "" && currentJson !== savedJson;
+
+  const handleTriggerChange = (trigger: TriggerConfig) => {
+    onChange({
+      ...metaRef.current,
+      trigger,
+      nodes: fromRfNodes(nodes),
+      edges: fromRfEdges(edges),
+    });
+  };
 
   const showToast = (msg: string, kind = "success") => {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -196,7 +212,11 @@ export function FlowCanvas({ workflow, onChange }: FlowCanvasProps) {
   };
 
   const handleSave = async () => {
-    const graph = { nodes: fromRfNodes(nodes), edges: fromRfEdges(edges) };
+    const graph = {
+      nodes: fromRfNodes(nodes),
+      edges: fromRfEdges(edges),
+      trigger: workflow.trigger,
+    };
     try {
       await api.updateWorkflow(workflow.id, graph);
       setSavedJson(JSON.stringify(graph));
@@ -313,6 +333,8 @@ export function FlowCanvas({ workflow, onChange }: FlowCanvasProps) {
         onSave={handleSave}
         dirty={dirty}
         errorCount={diag.errors.length}
+        trigger={workflow.trigger}
+        onTriggerChange={handleTriggerChange}
       />
     </div>
   );
