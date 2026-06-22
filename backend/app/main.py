@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import engine, Base
-from app.routers import executions, webhooks, workflows
+from app.routers import copilot, executions, webhooks, workflows
 from app.seed import seed_data
 
 
@@ -40,6 +40,7 @@ app.add_middleware(
 app.include_router(workflows.router, prefix="/api/v1/flows")
 app.include_router(executions.router, prefix="/api/v1/flows")
 app.include_router(webhooks.router, prefix="/api/v1/flows")
+app.include_router(copilot.router, prefix="/api/v1/flows")
 
 
 @app.get("/health")

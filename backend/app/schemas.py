@@ -111,3 +111,51 @@ class WorkflowListResponse(BaseModel):
 
 class WebhookPayload(BaseModel):
     data: dict[str, Any] | None = None
+
+
+# --- AI Flow Copilot (P0.1) ---
+
+
+class CopilotGenerateRequest(BaseModel):
+    description: str = Field(min_length=1, max_length=2000)
+    name: str | None = None
+    persist: bool = True
+
+
+class CopilotGenerateResponse(BaseModel):
+    source: Literal["ollama", "openrouter", "heuristic"]
+    model: str | None
+    valid: bool
+    errors: list[str]
+    spec: WorkflowCreate
+    workflow: WorkflowResponse | None = None
+
+
+class NodeSuggestion(BaseModel):
+    type: Literal[
+        "trigger", "action", "conditional", "loop", "delay", "merge", "transform"
+    ]
+    label: str
+    reason: str
+
+
+class CopilotSuggestResponse(BaseModel):
+    suggestions: list[NodeSuggestion]
+
+
+class CopilotChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class CopilotChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=2000)
+    history: list[CopilotChatMessage] = Field(default_factory=list)
+
+
+class CopilotChatResponse(BaseModel):
+    reply: str
+    intent: Literal["build", "chat"]
+    source: Literal["ollama", "openrouter", "heuristic"]
+    model: str | None
+    suggested_workflow: WorkflowCreate | None = None

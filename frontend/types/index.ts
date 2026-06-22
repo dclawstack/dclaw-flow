@@ -56,3 +56,33 @@ export interface Execution {
   error?: Record<string, unknown> | null;
   node_executions: NodeExecution[];
 }
+
+export interface CopilotGenerateResponse {
+  source: "ollama" | "openrouter" | "heuristic";
+  model?: string | null;
+  valid: boolean;
+  errors: string[];
+  spec: Pick<Workflow, "name" | "description" | "nodes" | "edges" | "trigger">;
+  workflow?: Workflow | null;
+}
+
+export interface NodeSuggestion {
+  type: FlowNode["type"];
+  label: string;
+  reason: string;
+}
+
+export interface CopilotChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface CopilotChatResponse {
+  reply: string;
+  intent: "build" | "chat";
+  source: "ollama" | "openrouter" | "heuristic";
+  model?: string | null;
+  suggested_workflow?:
+    | Pick<Workflow, "name" | "description" | "nodes" | "edges" | "trigger">
+    | null;
+}

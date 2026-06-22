@@ -18,6 +18,18 @@ class Settings(BaseSettings):
     webhook_secret: str = "change-me-in-production"
     cors_origins: str = "http://localhost:3000"
 
+    # --- AI Flow Copilot (P0.1) ---
+    # Provider order for natural-language workflow generation. "auto" tries the
+    # local Ollama model first, then the OpenRouter cloud model, then falls back
+    # to a deterministic generator so the copilot always works offline / in CI.
+    copilot_provider: str = "auto"  # auto | ollama | openrouter | heuristic
+    copilot_timeout_seconds: float = 8.0
+    ollama_url: str = "http://localhost:11434"
+    ollama_model: str = "llama3.1"
+    openrouter_api_key: str = ""
+    openrouter_url: str = "https://openrouter.ai/api/v1"
+    openrouter_model: str = "moonshotai/kimi-k2"
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",")]
