@@ -126,7 +126,7 @@ status: P0
 | P0.1 | **AI Flow Copilot** ✅ | Describe automation in natural language; AI builds the workflow. | LLM workflow generation + node suggestion | Generate valid workflow from description in <10s |
 | P0.2 | **Visual Workflow Builder** ✅ | Drag-and-drop canvas for building multi-step automations. | AI layout optimization + path simplification | Canvas supports 50+ nodes; real-time validation |
 | P0.3 | **HTTP Webhook Triggers** ✅ | Trigger flows from external services via webhooks. | AI webhook schema inference + payload validation | Webhook ingestion latency <100ms; auto-generate OpenAPI spec |
-| P0.4 | **Execution History & Logs** | Full audit trail of every workflow run with step-level logs. | AI anomaly detection in execution patterns | Retain 90 days of history; query by status, date, or step |
+| P0.4 | **Execution History & Logs** ✅ | Full audit trail of every workflow run with step-level logs. | AI anomaly detection in execution patterns | Retain 90 days of history; query by status, date, or step |
 
 > **P0.1 status (implemented):** Endpoints under `/api/v1/flows/copilot`:
 > `POST /generate` turns a natural-language description into a validated
@@ -170,6 +170,20 @@ status: P0
 > and the inferred schema; the editor has an **Activate/Pause** toggle (webhooks
 > fire only for active workflows). LLM-assisted inference + replay protection are
 > deferred to P1.
+
+> **P0.4 status (implemented):** `GET /executions` now filters server-side by
+> **status, date range, and step** (`node_id`); added a `(status, started_at)`
+> index (migration `003`) and made `node_executions` eager-loaded (`selectin`,
+> which also fixed an async lazy-load hazard). New **`/executions/[id]` detail
+> page** shows metadata, anomaly flags, and per-step logs (input/output/error).
+> **Deterministic anomaly detection** (`services/anomaly.py`,
+> `GET /executions/{id}/anomalies`): slow-run outliers, repeated-failure streaks,
+> failing-node flags — no LLM. **90-day retention** via
+> `delete_executions_older_than` + a token-guarded
+> `POST /executions/admin/cleanup` and a documented cron
+> (`docs/guides/execution-retention.md`); no in-cluster scheduler (P1). The SSE
+> stream now emits valid JSON and terminates correctly (two bugs fixed); live
+> step streaming in the UI is deferred to P1.
 
 ---
 

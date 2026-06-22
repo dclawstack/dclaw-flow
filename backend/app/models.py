@@ -92,6 +92,8 @@ class Execution(Base):
     node_executions: Mapped[list["NodeExecution"]] = relationship(
         back_populates="execution",
         cascade="all, delete-orphan",
+        lazy="selectin",
+        order_by="NodeExecution.created_at",
     )
 
 
