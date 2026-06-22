@@ -51,9 +51,24 @@ export const api = {
         body: JSON.stringify({ payload, wait_for_completion: false }),
       },
     ),
-  listExecutions: (workflowId?: string) =>
-    fetchJson<ExecutionList>(
-      `/api/v1/flows/executions?${workflowId ? `workflow_id=${workflowId}&` : ""}`,
+  listExecutions: (params?: {
+    workflowId?: string;
+    status?: string;
+    nodeId?: string;
+    startedAfter?: string;
+    startedBefore?: string;
+  }) => {
+    const q = new URLSearchParams();
+    if (params?.workflowId) q.set("workflow_id", params.workflowId);
+    if (params?.status) q.set("status", params.status);
+    if (params?.nodeId) q.set("node_id", params.nodeId);
+    if (params?.startedAfter) q.set("started_after", params.startedAfter);
+    if (params?.startedBefore) q.set("started_before", params.startedBefore);
+    return fetchJson<ExecutionList>(`/api/v1/flows/executions?${q.toString()}`);
+  },
+  getExecutionAnomalies: (id: string) =>
+    fetchJson<{ flags: string[] }>(
+      `/api/v1/flows/executions/${id}/anomalies`,
     ),
   getExecution: (id: string) =>
     fetchJson<import("@/types").Execution>(`/api/v1/flows/executions/${id}`),

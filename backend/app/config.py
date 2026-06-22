@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     app_env: str = "development"
     log_level: str = "info"
     webhook_secret: str = "change-me-in-production"
+    admin_token: str = "change-me-in-production"
+    execution_retention_days: int = 90
     cors_origins: str = "http://localhost:3000"
 
     # --- AI Flow Copilot (P0.1) ---
