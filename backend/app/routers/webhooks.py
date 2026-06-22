@@ -1,9 +1,10 @@
-"""Webhook trigger router."""
+"""Webhook trigger router (P0.3)."""
 
 import asyncio
-import hmac
 import hashlib
-import uuid
+import hmac
+import json
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -12,61 +13,77 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal, get_db
 from app.models import Execution, Workflow
-from app.schemas import WebhookPayload
 from app.services.executor import execute_workflow
+from app.services.schema_inference import infer_schema, validate_payload
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
+logger = logging.getLogger("flow.webhooks")
 
 
-async def verify_signature(request: Request, secret: str) -> bool:
-    body = await request.body()
-    signature = hmac.new(
-        secret.encode(),
-        body,
-        hashlib.sha256,
-    ).hexdigest()
-    header = request.headers.get("X-Flow-Signature", "")
-    expected = f"sha256={signature}"
-    return hmac.compare_digest(expected, header)
+def verify_signature(body: bytes, secret: str, header: str) -> bool:
+    """Validate an HMAC-SHA256 signature (X-Flow-Signature: sha256=<hex>)."""
+    digest = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(f"sha256={digest}", header)
+
+
+async def _find_active_workflow(db: AsyncSession, webhook_id: str) -> Workflow | None:
+    """Indexed lookup by webhook path (trigger #>> '{config,path}')."""
+    stmt = select(Workflow).where(
+        Workflow.status == "active",
+        Workflow.trigger.op("->")("config").op("->>")("path") == webhook_id,
+    )
+    return (await db.execute(stmt)).scalars().first()
 
 
 @router.post("/{webhook_id}", status_code=status.HTTP_202_ACCEPTED)
 async def receive_webhook(
     webhook_id: str,
     request: Request,
-    payload: WebhookPayload,
     x_flow_signature: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    # For MVP, scan workflows to find matching webhook path
-    result = await db.execute(select(Workflow).where(Workflow.status == "active"))
-    workflows = result.scalars().all()
+    """Accept an arbitrary JSON payload and trigger the matching workflow."""
+    body = await request.body()
+    try:
+        payload = json.loads(body) if body else {}
+    except json.JSONDecodeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid JSON body",
+        ) from exc
 
-    workflow = None
-    for wf in workflows:
-        trigger_config = wf.trigger.get("config", {})
-        if trigger_config.get("path") == webhook_id:
-            workflow = wf
-            break
-
+    workflow = await _find_active_workflow(db, webhook_id)
     if not workflow:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Webhook not found",
         )
 
-    secret = workflow.trigger.get("config", {}).get("secret", "")
-    if secret and not await verify_signature(request, secret):
+    config = workflow.trigger.get("config", {})
+    secret = config.get("secret", "")
+    if secret and not verify_signature(body, secret, x_flow_signature or ""):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid signature",
         )
 
+    # First payload teaches the schema; later payloads are validated against it.
+    schema_errors: list[str] = []
+    schema = config.get("inferred_schema")
+    if schema is None:
+        new_config = {**config, "inferred_schema": infer_schema(payload)}
+        workflow.trigger = {**workflow.trigger, "config": new_config}
+        await db.commit()
+    else:
+        schema_errors = validate_payload(payload, schema)
+        if schema_errors:
+            logger.info("webhook %s payload mismatch: %s", webhook_id, schema_errors)
+
     execution = Execution(
         workflow_id=workflow.id,
         status="pending",
         trigger_source="webhook",
-        trigger_payload=payload.data or {},
+        trigger_payload=payload if isinstance(payload, dict) else {"_raw": payload},
     )
     db.add(execution)
     await db.commit()
@@ -74,7 +91,35 @@ async def receive_webhook(
 
     asyncio.create_task(run_webhook_execution(workflow, execution))
 
-    return {"execution_id": str(execution.id), "status": "accepted"}
+    return {
+        "execution_id": str(execution.id),
+        "status": "accepted",
+        "schema_valid": not schema_errors,
+        "schema_errors": schema_errors,
+    }
+
+
+@router.get("/{webhook_id}/schema")
+async def get_webhook_schema(
+    webhook_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Return the inferred payload schema for a webhook (the auto-OpenAPI fragment)."""
+    stmt = select(Workflow).where(
+        Workflow.trigger.op("->")("config").op("->>")("path") == webhook_id,
+    )
+    workflow = (await db.execute(stmt)).scalars().first()
+    if not workflow:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Webhook not found",
+        )
+    config = workflow.trigger.get("config", {})
+    return {
+        "webhook_id": webhook_id,
+        "workflow_id": str(workflow.id),
+        "schema": config.get("inferred_schema"),
+    }
 
 
 async def run_webhook_execution(workflow: Workflow, execution: Execution) -> None:
