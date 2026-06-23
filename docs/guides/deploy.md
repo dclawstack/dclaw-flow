@@ -14,19 +14,23 @@ Order matters because of a CORS/URL chicken-and-egg: **DB → backend → fronte
 > runs `alembic upgrade head` on boot so the schema **and indexes** (migrations
 > 002/003, which `create_all` does NOT create) exist in production.
 
-## 1. Neon (Postgres)
+## 1. Neon (Postgres) — ✅ already provisioned
 
-1. Create a free project at neon.tech → database name `dclaw_flow`.
-2. Copy the connection string and convert it for SQLAlchemy + **asyncpg**:
-   - scheme `postgresql://` → `postgresql+asyncpg://`
-   - **remove** `sslmode=...` and `channel_binding=...` query params (asyncpg rejects them)
-   - **add** `?ssl=require`
+Provisioned via the Vercel Marketplace (`vercel integration add neon`) and
+**already migrated** (tables + indexes). Resource `neon-aureolin-pendant`,
+connected to the `dclaw-flow` Vercel project; default database `neondb`.
 
-   ```
-   postgresql+asyncpg://USER:PASSWORD@ep-xxx.neon.tech/dclaw_flow?ssl=require
-   ```
+Get the Render-ready connection string (asyncpg form, direct/unpooled endpoint):
 
-   This is your `DATABASE_URL`.
+```
+bash scripts/render-db-url.sh
+```
+
+It reads the gitignored `frontend/.env.local` and prints
+`postgresql+asyncpg://…/neondb?ssl=require` — that value is your `DATABASE_URL`
+for Render in step 2. (The conversion: scheme → `postgresql+asyncpg://`, strip
+libpq `sslmode`/`channel_binding`, add `?ssl=require`; the unpooled endpoint
+avoids PgBouncer breaking asyncpg prepared statements.)
 
 ## 2. Render (backend)
 
@@ -41,13 +45,18 @@ Order matters because of a CORS/URL chicken-and-egg: **DB → backend → fronte
    `$PORT`. Verify `https://<service>.onrender.com/health` → `{"status":"ok"}`.
    Note the service URL (e.g. `https://dclaw-flow-api.onrender.com`).
 
-## 3. Vercel (frontend)
+## 3. Vercel (frontend) — ✅ project already linked
 
-1. New Project → import this repo → set **Root Directory = `frontend`**
-   (Vercel auto-detects Next.js).
-2. Env var `NEXT_PUBLIC_API_URL` = the Render URL from step 2
-   (e.g. `https://dclaw-flow-api.onrender.com`). It is baked at build time.
-3. Deploy. Note the frontend URL (e.g. `https://dclaw-flow.vercel.app`).
+The Vercel project **`dclaw-flow`** (`allen-s-projects6`) is already created and
+linked to `frontend/` (Next.js auto-detected). Remaining, **after Render is up**:
+
+1. Set the backend URL and deploy from `frontend/`:
+   ```
+   vercel env add NEXT_PUBLIC_API_URL production   # paste the Render URL
+   vercel deploy --prod --cwd frontend
+   ```
+   `NEXT_PUBLIC_API_URL` is baked at build, so deploy *after* Render exists.
+2. Note the frontend URL (e.g. `https://dclaw-flow.vercel.app`).
 
 ## 4. Back-fill CORS
 
