@@ -9,4 +9,6 @@ RUN pip install --no-cache-dir .
 
 EXPOSE 8088
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8088"]
+# Apply migrations (so migration-only indexes exist) then serve. Render injects
+# $PORT; locally it falls back to 8088 (matches docker-compose).
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8088}"]
