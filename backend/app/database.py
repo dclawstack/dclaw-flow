@@ -11,6 +11,11 @@ engine = create_async_engine(
     settings.database_url,
     echo=settings.app_env == "development",
     future=True,
+    # Neon (and other serverless Postgres) auto-suspends when idle and drops
+    # connections; validate/recycle pooled connections so a dropped one
+    # reconnects transparently instead of 500-ing the next request.
+    pool_pre_ping=True,
+    pool_recycle=300,
 )
 
 AsyncSessionLocal = async_sessionmaker(
