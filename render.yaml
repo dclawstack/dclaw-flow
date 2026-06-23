@@ -1,0 +1,36 @@
+# Render Blueprint for the DClaw Flow backend (FastAPI, Docker).
+# Frontend deploys to Vercel; Postgres is Neon. See docs/guides/deploy.md.
+#
+# Render injects $PORT — the container binds it (see backend/Dockerfile CMD).
+# DATABASE_URL and CORS_ORIGINS are set in the Render dashboard (sync: false).
+services:
+  - type: web
+    name: dclaw-flow-api
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      # Neon connection string, in asyncpg form, e.g.
+      #   postgresql+asyncpg://USER:PASS@HOST/dclaw_flow?ssl=require
+      - key: DATABASE_URL
+        sync: false
+      # Comma-separated allowed origins — set to the Vercel frontend URL
+      #   e.g. https://dclaw-flow.vercel.app
+      - key: CORS_ORIGINS
+        sync: false
+      - key: APP_ENV
+        value: production
+      # AI Copilot: heuristic works with no key; set a key + switch to "auto"
+      # to enable OpenRouter.
+      - key: COPILOT_PROVIDER
+        value: heuristic
+      - key: OPENROUTER_API_KEY
+        sync: false
+      # Generated once by Render; used for webhook HMAC + the retention endpoint.
+      - key: WEBHOOK_SECRET
+        generateValue: true
+      - key: ADMIN_TOKEN
+        generateValue: true
