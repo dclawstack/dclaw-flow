@@ -50,13 +50,14 @@ async def execute_workflow(
 
     outputs: dict[str, dict[str, Any]] = {}
     active: set[str] = set()
+    failed: set[str] = set()
 
     for node_id in order:
         node = node_map[node_id]
         node_edges = incoming.get(node_id, [])
         is_entry = node.get("type") == "trigger"
         node_active = is_entry or any(
-            _edge_active(edge, active, outputs) for edge in node_edges
+            _edge_active(edge, active, failed, outputs) for edge in node_edges
         )
 
         if not node_active:
@@ -108,15 +109,32 @@ async def execute_workflow(
                     await asyncio.sleep(_backoff_delay(policy, attempt))
 
         if not succeeded:
-            execution.status = "failed"
-            execution.error = {
-                "node_id": node_id,
-                "message": last_error,
+            failed.add(node_id)
+            # Expose the failure so error edges / recovery nodes can use it.
+            outputs[node_id] = {
+                "error": last_error,
+                "failed": True,
                 "attempts": max_attempts,
             }
-            execution.completed_at = datetime.now(timezone.utc)
-            await db.commit()
-            return
+            error_edges = [
+                e
+                for e in edges
+                if e.get("source") == node_id and e.get("kind") == "error"
+            ]
+            caught = any(
+                _edge_active(e, active, failed, outputs) for e in error_edges
+            )
+            if not caught:
+                execution.status = "failed"
+                execution.error = {
+                    "node_id": node_id,
+                    "message": last_error,
+                    "attempts": max_attempts,
+                }
+                execution.completed_at = datetime.now(timezone.utc)
+                await db.commit()
+                return
+            # Caught by an error/fallback path — continue the topo loop.
 
     execution.status = "completed"
     execution.completed_at = datetime.now(timezone.utc)
@@ -126,10 +144,17 @@ async def execute_workflow(
 def _edge_active(
     edge: dict[str, Any],
     active: set[str],
+    failed: set[str],
     outputs: dict[str, dict[str, Any]],
 ) -> bool:
-    """An edge is active if its source ran and its condition (if any) is truthy."""
-    if edge.get("source") not in active:
+    """Is this edge active? Normal edges fire when the source succeeded; error
+    edges fire when it failed. Either way the condition (if any) must be truthy.
+    """
+    source = edge.get("source")
+    if edge.get("kind") == "error":
+        if source not in failed:
+            return False
+    elif source not in active:
         return False
     condition = edge.get("condition")
     if not condition:

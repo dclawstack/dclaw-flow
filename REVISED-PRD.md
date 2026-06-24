@@ -218,6 +218,16 @@ status: P0
 > branches, Slack/webhook **alerts**, AI root-cause analysis, and the
 > retry-policy authoring UI.
 
+> **P1.4 status (phase 2 — fallback paths):** Edges now carry a `kind`
+> (`normal` | `error`, default `normal`). When a node fails (after retries),
+> the executor follows its **error edges** to a recovery path instead of
+> failing the run; the failed node's error is exposed as
+> `{{node.error}}`/`{{node.failed}}` for error edges and recovery nodes. A
+> failure with no firing error edge still fails the execution (unchanged). A
+> recovered run is `completed` (the failure stays visible in the per-node
+> rows). Deferred: Slack/webhook **alerts**, AI root-cause, and the
+> error-edge + retry **authoring UI**.
+
 ## 7. P2 Vertical / Scale Features (Could Have — v1.3+)
 
 | # | Feature | Description | AI Component | Acceptance Criteria |

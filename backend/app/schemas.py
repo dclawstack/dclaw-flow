@@ -29,6 +29,8 @@ class EdgeSchema(BaseModel):
     target: str
     condition: str | None = None
     label: str | None = None
+    # "error" edges fire when the source node fails; "normal" when it succeeds.
+    kind: Literal["normal", "error"] = "normal"
 
 
 class TriggerConfig(BaseModel):
