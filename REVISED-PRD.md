@@ -194,7 +194,7 @@ status: P0
 | P1.1 | **Temporal.io Integration** | Durable workflow execution with retries, timeouts, and sagas. | AI retry-policy recommendation | Support long-running workflows; automatic saga compensation |
 | P1.2 | **100+ Connectors** | Pre-built integrations for Slack, GitHub, Salesforce, Stripe, etc. | AI connector health monitoring | OAuth-based auth; connectors auto-tested weekly |
 | P1.3 | **Conditional Logic & Branching** 🟡 | If/else, loops, and parallel execution in workflows. | AI branch-coverage analysis + dead-path detection | Visual condition builder; parallel execution up to 10 branches |
-| P1.4 | **Error Handling & Alerts** | Smart retries, fallback paths, and PagerDuty/Slack alerts. | AI root-cause analysis for failed steps | 3 retry strategies; alert within 30s of failure |
+| P1.4 | **Error Handling & Alerts** 🟡 | Smart retries, fallback paths, and PagerDuty/Slack alerts. | AI root-cause analysis for failed steps | 3 retry strategies; alert within 30s of failure |
 
 ---
 
@@ -207,6 +207,16 @@ status: P0
 > flows are unchanged. Deferred: canvas edge-condition **authoring UI** (next
 > PR), comparison operators, parallel/loop execution, and AI branch-coverage
 > hints (later phases).
+
+> **P1.4 status (in progress):** **Per-node retries** ship. A node carries an
+> optional `retry` policy (`max_attempts` clamped 1–10, `backoff_strategy`
+> none/fixed/exponential, `backoff_seconds`); the executor retries a failed node
+> with backoff and records **one `NodeExecution` row per attempt**
+> (`attempt_number`, migration `004`). HTTP actions now **raise on transport
+> errors and 5xx** (retriable); 4xx still flows through as output to branch on.
+> No `retry` config = 1 attempt (unchanged). Deferred (Phase 2+): fallback/error
+> branches, Slack/webhook **alerts**, AI root-cause analysis, and the
+> retry-policy authoring UI.
 
 ## 7. P2 Vertical / Scale Features (Could Have — v1.3+)
 

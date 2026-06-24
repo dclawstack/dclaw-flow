@@ -70,32 +70,50 @@ async def execute_workflow(
             await db.commit()
             continue
 
-        node_exec = NodeExecution(
-            execution_id=execution.id,
-            node_id=node_id,
-            status="running",
-        )
-        db.add(node_exec)
-        await db.commit()
+        policy = node.get("retry") or {}
+        max_attempts = _retry_max(policy)
+        succeeded = False
+        last_error = ""
 
-        try:
-            node_input = build_node_input(node, outputs)
-            node_exec.input = node_input
+        for attempt in range(1, max_attempts + 1):
+            node_exec = NodeExecution(
+                execution_id=execution.id,
+                node_id=node_id,
+                status="running",
+                attempt_number=attempt,
+            )
+            db.add(node_exec)
             await db.commit()
 
-            output = await run_node(node, node_input)
-            outputs[node_id] = output
-            active.add(node_id)
+            try:
+                node_input = build_node_input(node, outputs)
+                node_exec.input = node_input
+                await db.commit()
 
-            node_exec.status = "completed"
-            node_exec.output = output
-            await db.commit()
-        except Exception as e:
-            node_exec.status = "failed"
-            node_exec.error = {"message": str(e)}
-            await db.commit()
+                output = await run_node(node, node_input)
+                outputs[node_id] = output
+                active.add(node_id)
+
+                node_exec.status = "completed"
+                node_exec.output = output
+                await db.commit()
+                succeeded = True
+                break
+            except Exception as e:
+                last_error = str(e)
+                node_exec.status = "failed"
+                node_exec.error = {"message": last_error, "attempt": attempt}
+                await db.commit()
+                if attempt < max_attempts:
+                    await asyncio.sleep(_backoff_delay(policy, attempt))
+
+        if not succeeded:
             execution.status = "failed"
-            execution.error = {"node_id": node_id, "message": str(e)}
+            execution.error = {
+                "node_id": node_id,
+                "message": last_error,
+                "attempts": max_attempts,
+            }
             execution.completed_at = datetime.now(timezone.utc)
             await db.commit()
             return
@@ -122,6 +140,22 @@ def _edge_active(
 def _is_truthy(value: str) -> bool:
     """Resolved-condition truthiness: empty / false-ish strings are falsey."""
     return value.strip().lower() not in ("", "false", "0", "no", "none", "null")
+
+
+def _retry_max(policy: dict[str, Any]) -> int:
+    """Clamp max_attempts to [1, 10] (a runaway-execution safety bound)."""
+    return max(1, min(10, int(policy.get("max_attempts", 1))))
+
+
+def _backoff_delay(policy: dict[str, Any], attempt: int) -> float:
+    """Seconds to wait before the next attempt, per the backoff strategy."""
+    strategy = policy.get("backoff_strategy", "none")
+    base = float(policy.get("backoff_seconds", 1.0))
+    if strategy == "fixed":
+        return base
+    if strategy == "exponential":
+        return min(60.0, base * (2 ** (attempt - 1)))
+    return 0.0
 
 
 def build_node_input(
@@ -211,13 +245,20 @@ async def run_http_action(node_input: dict[str, Any]) -> dict[str, Any]:
                 )
             else:
                 return {"status": 0, "error": f"Unsupported method: {method}"}
-            return {
-                "status": response.status_code,
-                "body": response.text,
-                "headers": dict(response.headers),
-            }
         except httpx.RequestError as e:
-            return {"status": 0, "error": str(e)}
+            # Transport failures are retriable -> raise so the retry loop sees it.
+            raise RuntimeError(f"HTTP request failed: {e}") from e
+
+    # 5xx is a (likely transient) server error -> retriable; 4xx is a valid
+    # response the workflow can branch on, so it flows through as output.
+    if response.status_code >= 500:
+        raise RuntimeError(f"HTTP {response.status_code} from {url}")
+
+    return {
+        "status": response.status_code,
+        "body": response.text,
+        "headers": dict(response.headers),
+    }
 
 
 def evaluate_expression(expression: str, context: dict[str, Any]) -> bool:
