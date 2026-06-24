@@ -225,8 +225,12 @@ status: P0
 > `{{node.error}}`/`{{node.failed}}` for error edges and recovery nodes. A
 > failure with no firing error edge still fails the execution (unchanged). A
 > recovered run is `completed` (the failure stays visible in the per-node
-> rows). Deferred: Slack/webhook **alerts**, AI root-cause, and the
-> error-edge + retry **authoring UI**.
+> rows). Deferred: Slack/webhook **alerts** and AI root-cause.
+>
+> **Authoring UI (shipped):** the property panel now edits a node's **retry
+> policy** (max attempts + backoff) and a connection's **path type** (normal vs
+> error/fallback) + condition; error edges render red on the canvas. Branching,
+> retries, and fallback are all now configurable in the visual builder.
 
 ## 7. P2 Vertical / Scale Features (Could Have — v1.3+)
 
