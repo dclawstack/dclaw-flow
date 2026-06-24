@@ -7,6 +7,12 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class RetryPolicy(BaseModel):
+    max_attempts: int = Field(default=1, ge=1, le=10)
+    backoff_strategy: Literal["none", "fixed", "exponential"] = "none"
+    backoff_seconds: float = Field(default=1.0, ge=0)
+
+
 class NodeSchema(BaseModel):
     id: str
     type: Literal["trigger", "action", "conditional", "loop", "delay", "merge", "transform"]
@@ -14,6 +20,7 @@ class NodeSchema(BaseModel):
     config: dict[str, Any]
     label: str | None = None
     timeout_seconds: int = 30
+    retry: RetryPolicy | None = None
 
 
 class EdgeSchema(BaseModel):
@@ -74,6 +81,7 @@ class NodeExecutionSchema(BaseModel):
     execution_id: uuid.UUID
     node_id: str
     status: str
+    attempt_number: int
     input: dict[str, Any] | None
     output: dict[str, Any] | None
     error: dict[str, Any] | None

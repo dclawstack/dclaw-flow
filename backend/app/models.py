@@ -116,6 +116,7 @@ class NodeExecution(Base):
         nullable=False,
         default="pending",
     )
+    attempt_number: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     input: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     output: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     error: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
