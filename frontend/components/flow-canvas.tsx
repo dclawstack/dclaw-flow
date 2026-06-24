@@ -52,13 +52,25 @@ function toRfNodes(nodes: FlowNode[]): Node[] {
   }));
 }
 
+function _edgeLabel(condition?: string, kind?: string): string | undefined {
+  if (kind === "error") return `⚠ ${condition || "on error"}`;
+  return condition || undefined;
+}
+
+function _edgeStyle(kind?: string) {
+  return kind === "error"
+    ? { style: { stroke: "#ef4444" }, labelStyle: { fill: "#b91c1c" } }
+    : {};
+}
+
 function toRfEdges(edges: FlowEdge[]): Edge[] {
   return edges.map((e) => ({
     id: e.id,
     source: e.source,
     target: e.target,
-    label: e.condition || e.label, // show the condition on the wire
-    data: { condition: e.condition },
+    label: _edgeLabel(e.condition, e.kind),
+    data: { condition: e.condition, kind: e.kind },
+    ..._edgeStyle(e.kind),
   }));
 }
 
@@ -71,13 +83,16 @@ function fromRfNodes(rf: Node[]): FlowNode[] {
 }
 
 function fromRfEdges(rf: Edge[]): FlowEdge[] {
-  return rf.map((e) => ({
-    id: e.id,
-    source: e.source,
-    target: e.target,
-    condition:
-      (e.data as { condition?: string } | undefined)?.condition || undefined,
-  }));
+  return rf.map((e) => {
+    const data = e.data as { condition?: string; kind?: string } | undefined;
+    return {
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      condition: data?.condition || undefined,
+      kind: data?.kind === "error" ? "error" : "normal",
+    };
+  });
 }
 
 export function FlowCanvas({ workflow, onChange }: FlowCanvasProps) {
@@ -196,14 +211,33 @@ export function FlowCanvas({ workflow, onChange }: FlowCanvasProps) {
     setSelectedEdge(null);
   }, []);
 
-  const handleUpdateEdge = (id: string, condition: string) => {
-    const cond = condition.trim() || undefined;
+  const handleUpdateEdge = (
+    id: string,
+    patch: { condition?: string; kind?: FlowEdge["kind"] },
+  ) => {
     setEdges((eds) =>
-      eds.map((e) =>
-        e.id === id ? { ...e, label: cond, data: { condition: cond } } : e,
-      ),
+      eds.map((e) => {
+        if (e.id !== id) return e;
+        const data = {
+          ...(e.data as { condition?: string; kind?: string }),
+          ...patch,
+        };
+        if ("condition" in patch) data.condition = patch.condition?.trim() || undefined;
+        return {
+          ...e,
+          label: _edgeLabel(data.condition, data.kind),
+          data,
+          ..._edgeStyle(data.kind),
+        };
+      }),
     );
-    setSelectedEdge((se) => (se?.id === id ? { ...se, condition: cond } : se));
+    setSelectedEdge((se) => {
+      if (se?.id !== id) return se;
+      const next = { ...se };
+      if ("condition" in patch) next.condition = patch.condition?.trim() || undefined;
+      if ("kind" in patch) next.kind = patch.kind;
+      return next;
+    });
   };
 
   const handleAddNode = (type: FlowNode["type"]) => {

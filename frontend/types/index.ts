@@ -1,3 +1,9 @@
+export interface RetryPolicy {
+  max_attempts: number;
+  backoff_strategy: "none" | "fixed" | "exponential";
+  backoff_seconds: number;
+}
+
 export interface FlowNode {
   id: string;
   type: "trigger" | "action" | "conditional" | "loop" | "delay" | "merge" | "transform";
@@ -5,6 +11,7 @@ export interface FlowNode {
   config: Record<string, unknown>;
   label?: string;
   timeout_seconds?: number;
+  retry?: RetryPolicy | null;
 }
 
 export interface FlowEdge {
@@ -13,6 +20,7 @@ export interface FlowEdge {
   target: string;
   condition?: string;
   label?: string;
+  kind?: "normal" | "error";
 }
 
 export interface TriggerConfig {

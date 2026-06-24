@@ -3,13 +3,16 @@
 import { useState } from "react";
 import { Copy, Check } from "lucide-react";
 import { api, webhookUrl } from "@/lib/api";
-import type { FlowEdge, FlowNode, TriggerConfig } from "@/types";
+import type { FlowEdge, FlowNode, RetryPolicy, TriggerConfig } from "@/types";
 
 interface PropertyPanelProps {
   node: FlowNode | null;
   edge: FlowEdge | null;
   onUpdate: (node: FlowNode) => void;
-  onUpdateEdge: (id: string, condition: string) => void;
+  onUpdateEdge: (
+    id: string,
+    patch: { condition?: string; kind?: FlowEdge["kind"] },
+  ) => void;
   onDelete: (id: string) => void;
   onSave: () => void;
   dirty: boolean;
@@ -30,6 +33,7 @@ function EdgeEditor({
 >) {
   if (!edge) return null;
   const condition = edge.condition || "";
+  const isError = edge.kind === "error";
   return (
     <div className="w-64 border-l bg-gray-50 p-4">
       <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -38,22 +42,112 @@ function EdgeEditor({
       <p className="mb-3 break-all text-xs text-gray-500">
         {edge.source} → {edge.target}
       </p>
+
+      <label className="mb-1 block text-xs font-medium text-gray-600">
+        Path type
+      </label>
+      <select
+        value={isError ? "error" : "normal"}
+        onChange={(e) =>
+          onUpdateEdge(edge.id, { kind: e.target.value as FlowEdge["kind"] })
+        }
+        className="mb-3 w-full rounded border px-2 py-1 text-sm"
+      >
+        <option value="normal">Normal — on success</option>
+        <option value="error">Error / fallback — on failure</option>
+      </select>
+
       <label className="mb-1 block text-xs font-medium text-gray-600">
         Condition
       </label>
       <input
         value={condition}
-        onChange={(e) => onUpdateEdge(edge.id, e.target.value)}
+        onChange={(e) => onUpdateEdge(edge.id, { condition: e.target.value })}
         placeholder="e.g. {{node-1.result}}"
         className="w-full rounded border px-2 py-1 text-sm font-mono"
       />
       <p className="mt-2 text-[10px] leading-relaxed text-gray-400">
-        Empty = always taken. Otherwise this edge is taken only when the
-        condition resolves truthy. For an if/else from a conditional node, use{" "}
-        <code>{"{{id.result}}"}</code> on one edge and <code>{"{{id.else}}"}</code>{" "}
-        on the other.
+        {isError ? (
+          <>
+            Taken when the source node <strong>fails</strong> (after retries).
+            The failure is available as <code>{"{{src.error}}"}</code> /{" "}
+            <code>{"{{src.failed}}"}</code>. Leave the condition empty to always
+            catch.
+          </>
+        ) : (
+          <>
+            Empty = always taken. Otherwise taken only when the condition
+            resolves truthy. For if/else from a conditional, use{" "}
+            <code>{"{{id.result}}"}</code> and <code>{"{{id.else}}"}</code>.
+          </>
+        )}
       </p>
       <SaveButton onSave={onSave} dirty={dirty} errorCount={errorCount} />
+    </div>
+  );
+}
+
+function RetryEditor({
+  node,
+  onUpdate,
+}: Pick<PropertyPanelProps, "node" | "onUpdate">) {
+  if (!node) return null;
+  const retry = node.retry ?? null;
+  const set = (patch: Partial<RetryPolicy>) => {
+    const base: RetryPolicy = retry ?? {
+      max_attempts: 1,
+      backoff_strategy: "none",
+      backoff_seconds: 1,
+    };
+    const next = { ...base, ...patch };
+    onUpdate({ ...node, retry: next.max_attempts > 1 ? next : null });
+  };
+  return (
+    <div className="mb-3 border-t pt-3">
+      <label className="mb-1 block text-xs font-medium text-gray-600">
+        Retries (max attempts)
+      </label>
+      <input
+        type="number"
+        min={1}
+        max={10}
+        value={retry?.max_attempts ?? 1}
+        onChange={(e) =>
+          set({ max_attempts: Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 1)) })
+        }
+        className="w-full rounded border px-2 py-1 text-sm"
+      />
+      {retry && retry.max_attempts > 1 && (
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <div>
+            <label className="mb-1 block text-[10px] text-gray-500">Backoff</label>
+            <select
+              value={retry.backoff_strategy}
+              onChange={(e) =>
+                set({ backoff_strategy: e.target.value as RetryPolicy["backoff_strategy"] })
+              }
+              className="w-full rounded border px-1 py-1 text-xs"
+            >
+              <option value="none">none</option>
+              <option value="fixed">fixed</option>
+              <option value="exponential">exponential</option>
+            </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-[10px] text-gray-500">Seconds</label>
+            <input
+              type="number"
+              min={0}
+              step="0.5"
+              value={retry.backoff_seconds}
+              onChange={(e) =>
+                set({ backoff_seconds: parseFloat(e.target.value) || 0 })
+              }
+              className="w-full rounded border px-1 py-1 text-xs"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -358,6 +452,10 @@ export function PropertyPanel({
             className="w-full rounded border px-2 py-1 text-sm font-mono"
           />
         </div>
+      )}
+
+      {node.type !== "trigger" && (
+        <RetryEditor node={node} onUpdate={onUpdate} />
       )}
 
       <button
