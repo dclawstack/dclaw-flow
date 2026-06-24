@@ -193,10 +193,20 @@ status: P0
 |---|---------|-------------|--------------|---------------------|
 | P1.1 | **Temporal.io Integration** | Durable workflow execution with retries, timeouts, and sagas. | AI retry-policy recommendation | Support long-running workflows; automatic saga compensation |
 | P1.2 | **100+ Connectors** | Pre-built integrations for Slack, GitHub, Salesforce, Stripe, etc. | AI connector health monitoring | OAuth-based auth; connectors auto-tested weekly |
-| P1.3 | **Conditional Logic & Branching** | If/else, loops, and parallel execution in workflows. | AI branch-coverage analysis + dead-path detection | Visual condition builder; parallel execution up to 10 branches |
+| P1.3 | **Conditional Logic & Branching** 🟡 | If/else, loops, and parallel execution in workflows. | AI branch-coverage analysis + dead-path detection | Visual condition builder; parallel execution up to 10 branches |
 | P1.4 | **Error Handling & Alerts** | Smart retries, fallback paths, and PagerDuty/Slack alerts. | AI root-cause analysis for failed steps | 3 retry strategies; alert within 30s of failure |
 
 ---
+
+> **P1.3 status (in progress):** Conditional **branching now executes** —
+> `executor.py` traverses only active edges from the trigger and records untaken
+> nodes as `skipped`. Branch model is **edge-condition expressions**: an edge is
+> active when its `condition` is empty (always) or resolves truthy (e.g.
+> `{{node.field}}`); a `conditional` node exposes `{{c.result}}` / `{{c.else}}`
+> for if/else. Edges with no condition are always active, so existing/linear
+> flows are unchanged. Deferred: canvas edge-condition **authoring UI** (next
+> PR), comparison operators, parallel/loop execution, and AI branch-coverage
+> hints (later phases).
 
 ## 7. P2 Vertical / Scale Features (Could Have — v1.3+)
 
