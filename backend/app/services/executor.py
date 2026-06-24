@@ -3,6 +3,7 @@
 import asyncio
 import json
 import re
+from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
 
@@ -18,7 +19,13 @@ async def execute_workflow(
     workflow: Workflow,
     execution: Execution,
 ) -> None:
-    """Execute a workflow in-process using async topological sort."""
+    """Execute a workflow in topological order, following only active edges.
+
+    A non-trigger node runs only if at least one incoming edge is active (its
+    source ran and the edge's condition passes). Nodes on untaken branches are
+    recorded as ``skipped``. Edges with no condition are always active, so
+    linear flows behave exactly as before.
+    """
     execution.status = "running"
     execution.started_at = datetime.now(timezone.utc)
     await db.commit()
@@ -36,10 +43,33 @@ async def execute_workflow(
         await db.commit()
         return
 
+    incoming: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for edge in edges:
+        if edge.get("target"):
+            incoming[edge["target"]].append(edge)
+
     outputs: dict[str, dict[str, Any]] = {}
+    active: set[str] = set()
 
     for node_id in order:
         node = node_map[node_id]
+        node_edges = incoming.get(node_id, [])
+        is_entry = node.get("type") == "trigger"
+        node_active = is_entry or any(
+            _edge_active(edge, active, outputs) for edge in node_edges
+        )
+
+        if not node_active:
+            db.add(
+                NodeExecution(
+                    execution_id=execution.id,
+                    node_id=node_id,
+                    status="skipped",
+                )
+            )
+            await db.commit()
+            continue
+
         node_exec = NodeExecution(
             execution_id=execution.id,
             node_id=node_id,
@@ -55,6 +85,7 @@ async def execute_workflow(
 
             output = await run_node(node, node_input)
             outputs[node_id] = output
+            active.add(node_id)
 
             node_exec.status = "completed"
             node_exec.output = output
@@ -72,6 +103,25 @@ async def execute_workflow(
     execution.status = "completed"
     execution.completed_at = datetime.now(timezone.utc)
     await db.commit()
+
+
+def _edge_active(
+    edge: dict[str, Any],
+    active: set[str],
+    outputs: dict[str, dict[str, Any]],
+) -> bool:
+    """An edge is active if its source ran and its condition (if any) is truthy."""
+    if edge.get("source") not in active:
+        return False
+    condition = edge.get("condition")
+    if not condition:
+        return True
+    return _is_truthy(resolve_template(condition, outputs))
+
+
+def _is_truthy(value: str) -> bool:
+    """Resolved-condition truthiness: empty / false-ish strings are falsey."""
+    return value.strip().lower() not in ("", "false", "0", "no", "none", "null")
 
 
 def build_node_input(
@@ -122,7 +172,9 @@ async def run_node(
 
     if node_type == "conditional":
         expression = config.get("expression", "true")
-        return {"result": evaluate_expression(expression, node_input)}
+        result = evaluate_expression(expression, node_input)
+        # Expose both legs so edges can branch: {{cond.result}} / {{cond.else}}.
+        return {"result": result, "else": not result}
 
     if node_type == "delay":
         duration = config.get("duration_seconds", 1)
