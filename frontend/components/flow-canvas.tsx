@@ -57,7 +57,8 @@ function toRfEdges(edges: FlowEdge[]): Edge[] {
     id: e.id,
     source: e.source,
     target: e.target,
-    label: e.label,
+    label: e.condition || e.label, // show the condition on the wire
+    data: { condition: e.condition },
   }));
 }
 
@@ -74,7 +75,8 @@ function fromRfEdges(rf: Edge[]): FlowEdge[] {
     id: e.id,
     source: e.source,
     target: e.target,
-    label: typeof e.label === "string" ? e.label : undefined,
+    condition:
+      (e.data as { condition?: string } | undefined)?.condition || undefined,
   }));
 }
 
@@ -82,6 +84,7 @@ export function FlowCanvas({ workflow, onChange }: FlowCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [selectedNode, setSelectedNode] = useState<FlowNode | null>(null);
+  const [selectedEdge, setSelectedEdge] = useState<FlowEdge | null>(null);
   const [savedJson, setSavedJson] = useState("");
   const [toast, setToast] = useState<{ msg: string; kind: string } | null>(null);
   const [diag, setDiag] = useState<{
@@ -174,10 +177,34 @@ export function FlowCanvas({ workflow, onChange }: FlowCanvasProps) {
   );
 
   const onNodeClick = useCallback((_e: React.MouseEvent, node: Node) => {
+    setSelectedEdge(null);
     setSelectedNode((node.data as { node: FlowNode }).node);
   }, []);
 
-  const onPaneClick = useCallback(() => setSelectedNode(null), []);
+  const onEdgeClick = useCallback((_e: React.MouseEvent, edge: Edge) => {
+    setSelectedNode(null);
+    setSelectedEdge({
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      condition: (edge.data as { condition?: string } | undefined)?.condition,
+    });
+  }, []);
+
+  const onPaneClick = useCallback(() => {
+    setSelectedNode(null);
+    setSelectedEdge(null);
+  }, []);
+
+  const handleUpdateEdge = (id: string, condition: string) => {
+    const cond = condition.trim() || undefined;
+    setEdges((eds) =>
+      eds.map((e) =>
+        e.id === id ? { ...e, label: cond, data: { condition: cond } } : e,
+      ),
+    );
+    setSelectedEdge((se) => (se?.id === id ? { ...se, condition: cond } : se));
+  };
 
   const handleAddNode = (type: FlowNode["type"]) => {
     const id = `${type}-${Date.now()}`;
@@ -203,6 +230,9 @@ export function FlowCanvas({ workflow, onChange }: FlowCanvasProps) {
     setNodes((nds) => nds.filter((n) => n.id !== id));
     setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id));
     setSelectedNode((sn) => (sn?.id === id ? null : sn));
+    setSelectedEdge((se) =>
+      se && (se.source === id || se.target === id) ? null : se,
+    );
   };
 
   const handleAutoLayout = () => {
@@ -306,6 +336,7 @@ export function FlowCanvas({ workflow, onChange }: FlowCanvasProps) {
             onEdgesChange={onEdgesChange}
             onConnect={onConnect}
             onNodeClick={onNodeClick}
+            onEdgeClick={onEdgeClick}
             onPaneClick={onPaneClick}
             onInit={(inst) => (rfRef.current = inst)}
             deleteKeyCode={["Backspace", "Delete"]}
@@ -328,7 +359,9 @@ export function FlowCanvas({ workflow, onChange }: FlowCanvasProps) {
 
       <PropertyPanel
         node={selectedNode}
+        edge={selectedEdge}
         onUpdate={handleUpdateNode}
+        onUpdateEdge={handleUpdateEdge}
         onDelete={handleDeleteNode}
         onSave={handleSave}
         dirty={dirty}

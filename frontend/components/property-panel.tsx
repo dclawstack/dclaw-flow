@@ -3,17 +3,59 @@
 import { useState } from "react";
 import { Copy, Check } from "lucide-react";
 import { api, webhookUrl } from "@/lib/api";
-import type { FlowNode, TriggerConfig } from "@/types";
+import type { FlowEdge, FlowNode, TriggerConfig } from "@/types";
 
 interface PropertyPanelProps {
   node: FlowNode | null;
+  edge: FlowEdge | null;
   onUpdate: (node: FlowNode) => void;
+  onUpdateEdge: (id: string, condition: string) => void;
   onDelete: (id: string) => void;
   onSave: () => void;
   dirty: boolean;
   errorCount: number;
   trigger: TriggerConfig;
   onTriggerChange: (trigger: TriggerConfig) => void;
+}
+
+function EdgeEditor({
+  edge,
+  onUpdateEdge,
+  onSave,
+  dirty,
+  errorCount,
+}: Pick<
+  PropertyPanelProps,
+  "edge" | "onUpdateEdge" | "onSave" | "dirty" | "errorCount"
+>) {
+  if (!edge) return null;
+  const condition = edge.condition || "";
+  return (
+    <div className="w-64 border-l bg-gray-50 p-4">
+      <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+        Connection
+      </h3>
+      <p className="mb-3 break-all text-xs text-gray-500">
+        {edge.source} → {edge.target}
+      </p>
+      <label className="mb-1 block text-xs font-medium text-gray-600">
+        Condition
+      </label>
+      <input
+        value={condition}
+        onChange={(e) => onUpdateEdge(edge.id, e.target.value)}
+        placeholder="e.g. {{node-1.result}}"
+        className="w-full rounded border px-2 py-1 text-sm font-mono"
+      />
+      <p className="mt-2 text-[10px] leading-relaxed text-gray-400">
+        Empty = always taken. Otherwise this edge is taken only when the
+        condition resolves truthy. For an if/else from a conditional node, use{" "}
+        <code>{"{{id.result}}"}</code> on one edge and <code>{"{{id.else}}"}</code>{" "}
+        on the other.
+      </p>
+      <SaveButton onSave={onSave} dirty={dirty} errorCount={errorCount} />
+    </div>
+  );
 }
 
 function TriggerEditor({
@@ -155,7 +197,9 @@ function SaveButton({
 
 export function PropertyPanel({
   node,
+  edge,
   onUpdate,
+  onUpdateEdge,
   onDelete,
   onSave,
   dirty,
@@ -163,13 +207,26 @@ export function PropertyPanel({
   trigger,
   onTriggerChange,
 }: PropertyPanelProps) {
+  if (edge) {
+    return (
+      <EdgeEditor
+        edge={edge}
+        onUpdateEdge={onUpdateEdge}
+        onSave={onSave}
+        dirty={dirty}
+        errorCount={errorCount}
+      />
+    );
+  }
   if (!node) {
     return (
       <div className="w-64 border-l bg-gray-50 p-4">
         <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
           Properties
         </h3>
-        <p className="text-sm text-gray-400">Select a node to edit</p>
+        <p className="text-sm text-gray-400">
+          Select a node, or a connection to set its condition
+        </p>
         <SaveButton onSave={onSave} dirty={dirty} errorCount={errorCount} />
       </div>
     );
