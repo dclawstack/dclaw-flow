@@ -13,9 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
-from app.models import Execution, NodeExecution
+from app.models import Execution, NodeExecution, Workflow
 from app.schemas import ExecutionListResponse, ExecutionResponse
 from app.services.anomaly import detect_anomalies
+from app.services.copilot import analyze_failure
 from app.services.retention import delete_executions_older_than
 
 router = APIRouter(prefix="/executions", tags=["executions"])
@@ -113,6 +114,31 @@ async def get_execution_anomalies(
     )
     history = list(result.scalars().all())
     return {"flags": detect_anomalies(execution, history)}
+
+
+@router.get("/{execution_id}/root-cause")
+async def get_execution_root_cause(
+    execution_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    """Plain-language 'why did this fail' (LLM with deterministic fallback)."""
+    execution = await db.get(Execution, execution_id)
+    if not execution:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Execution not found",
+        )
+    if execution.status != "failed":
+        return {"explanation": "No failure to analyze.", "source": "heuristic"}
+
+    error = execution.error or {}
+    workflow = await db.get(Workflow, execution.workflow_id)
+    nodes = (workflow.nodes if workflow else None) or []
+    node = next((n for n in nodes if n.get("id") == error.get("node_id")), {})
+    explanation, source = await analyze_failure(
+        error, node.get("type"), node.get("config", {})
+    )
+    return {"explanation": explanation, "source": source}
 
 
 @router.post("/{execution_id}/cancel", response_model=ExecutionResponse)
