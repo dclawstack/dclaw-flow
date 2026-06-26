@@ -225,7 +225,14 @@ status: P0
 > `{{node.error}}`/`{{node.failed}}` for error edges and recovery nodes. A
 > failure with no firing error edge still fails the execution (unchanged). A
 > recovered run is `completed` (the failure stays visible in the per-node
-> rows). Deferred: Slack/webhook **alerts** and AI root-cause.
+> rows). Deferred: AI root-cause.
+>
+> **Failure alerts (shipped):** on an **uncaught** failure the executor
+> fire-and-forgets a POST (5s timeout, errors logged, never blocks the run) to a
+> global `ALERT_WEBHOOK_URL` (Slack-compatible `{"text": ...}` + structured
+> fields: workflow, execution, node, error, attempts, timestamp). Empty URL =
+> disabled. Caught/recovered failures and successes don't alert. Per-workflow
+> alert routing/UI deferred.
 >
 > **Authoring UI (shipped):** the property panel now edits a node's **retry
 > policy** (max attempts + backoff) and a connection's **path type** (normal vs

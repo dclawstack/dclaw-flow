@@ -18,6 +18,8 @@ class Settings(BaseSettings):
     webhook_secret: str = "change-me-in-production"
     admin_token: str = "change-me-in-production"
     execution_retention_days: int = 90
+    # Slack / generic webhook for failure alerts (empty = alerting disabled).
+    alert_webhook_url: str = ""
     cors_origins: str = "http://localhost:3000"
 
     # --- AI Flow Copilot (P0.1) ---

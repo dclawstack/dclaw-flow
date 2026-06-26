@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import re
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -10,8 +11,12 @@ from typing import Any
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models import Execution, NodeExecution, Workflow
 from app.services.engine import topological_sort
+
+logger = logging.getLogger("flow.executor")
+_alert_tasks: set[asyncio.Task[None]] = set()
 
 
 async def execute_workflow(
@@ -133,6 +138,7 @@ async def execute_workflow(
                 }
                 execution.completed_at = datetime.now(timezone.utc)
                 await db.commit()
+                _fire_alert(_alert_payload(workflow, execution))
                 return
             # Caught by an error/fallback path — continue the topo loop.
 
@@ -181,6 +187,46 @@ def _backoff_delay(policy: dict[str, Any], attempt: int) -> float:
     if strategy == "exponential":
         return min(60.0, base * (2 ** (attempt - 1)))
     return 0.0
+
+
+def _alert_payload(workflow: Workflow, execution: Execution) -> dict[str, Any]:
+    """Build the failure-alert payload (Slack-compatible `text` + structured)."""
+    err = execution.error or {}
+    node_id = err.get("node_id")
+    return {
+        "text": (
+            f"❌ Workflow '{workflow.name}' failed"
+            f" at node '{node_id}': {err.get('message')}"
+        ),
+        "event": "workflow_failed",
+        "workflow_id": str(workflow.id),
+        "workflow_name": workflow.name,
+        "execution_id": str(execution.id),
+        "node_id": node_id,
+        "error": err.get("message"),
+        "attempts": err.get("attempts"),
+        "failed_at": execution.completed_at.isoformat()
+        if execution.completed_at
+        else None,
+    }
+
+
+def _fire_alert(payload: dict[str, Any]) -> None:
+    """Send the alert in the background; keep a ref so it isn't GC'd."""
+    if not settings.alert_webhook_url:
+        return
+    task = asyncio.create_task(_send_alert(payload))
+    _alert_tasks.add(task)
+    task.add_done_callback(_alert_tasks.discard)
+
+
+async def _send_alert(payload: dict[str, Any]) -> None:
+    """POST the alert; never raise — a dead webhook must not affect runs."""
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            await client.post(settings.alert_webhook_url, json=payload)
+    except httpx.HTTPError as e:
+        logger.warning("alert webhook failed: %s", e)
 
 
 def build_node_input(
