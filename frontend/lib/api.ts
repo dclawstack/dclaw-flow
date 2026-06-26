@@ -70,6 +70,10 @@ export const api = {
     fetchJson<{ flags: string[] }>(
       `/api/v1/flows/executions/${id}/anomalies`,
     ),
+  getExecutionRootCause: (id: string) =>
+    fetchJson<{ explanation: string; source: string }>(
+      `/api/v1/flows/executions/${id}/root-cause`,
+    ),
   getExecution: (id: string) =>
     fetchJson<import("@/types").Execution>(`/api/v1/flows/executions/${id}`),
   cancelExecution: (id: string) =>

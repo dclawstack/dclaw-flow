@@ -194,7 +194,7 @@ status: P0
 | P1.1 | **Temporal.io Integration** | Durable workflow execution with retries, timeouts, and sagas. | AI retry-policy recommendation | Support long-running workflows; automatic saga compensation |
 | P1.2 | **100+ Connectors** | Pre-built integrations for Slack, GitHub, Salesforce, Stripe, etc. | AI connector health monitoring | OAuth-based auth; connectors auto-tested weekly |
 | P1.3 | **Conditional Logic & Branching** 🟡 | If/else, loops, and parallel execution in workflows. | AI branch-coverage analysis + dead-path detection | Visual condition builder; parallel execution up to 10 branches |
-| P1.4 | **Error Handling & Alerts** 🟡 | Smart retries, fallback paths, and PagerDuty/Slack alerts. | AI root-cause analysis for failed steps | 3 retry strategies; alert within 30s of failure |
+| P1.4 | **Error Handling & Alerts** ✅ | Smart retries, fallback paths, and PagerDuty/Slack alerts. | AI root-cause analysis for failed steps | 3 retry strategies; alert within 30s of failure |
 
 ---
 
@@ -225,7 +225,7 @@ status: P0
 > `{{node.error}}`/`{{node.failed}}` for error edges and recovery nodes. A
 > failure with no firing error edge still fails the execution (unchanged). A
 > recovered run is `completed` (the failure stays visible in the per-node
-> rows). Deferred: AI root-cause.
+> rows).
 >
 > **Failure alerts (shipped):** on an **uncaught** failure the executor
 > fire-and-forgets a POST (5s timeout, errors logged, never blocks the run) to a
@@ -233,6 +233,14 @@ status: P0
 > fields: workflow, execution, node, error, attempts, timestamp). Empty URL =
 > disabled. Caught/recovered failures and successes don't alert. Per-workflow
 > alert routing/UI deferred.
+>
+> **AI root-cause (shipped):** `GET /executions/{id}/root-cause` returns a
+> plain-language "why it failed / how to fix it" — local Ollama → cloud
+> OpenRouter → a **deterministic heuristic** that maps the known failure strings
+> (connection refused, 5xx, missing URL, cycle, timeout) to a cause + fix, so it
+> always works offline/CI (`copilot.analyze_failure`). On-demand (mirrors
+> `/anomalies`); surfaced as a "Root cause" panel on the execution detail page
+> for failed runs. **P1.4 complete.**
 >
 > **Authoring UI (shipped):** the property panel now edits a node's **retry
 > policy** (max attempts + backoff) and a connection's **path type** (normal vs

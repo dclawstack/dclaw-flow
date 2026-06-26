@@ -301,6 +301,79 @@ async def _chat_openrouter(messages: list[dict[str, str]]) -> str | None:
         return resp.json()["choices"][0]["message"]["content"] or None
 
 
+_ROOT_CAUSE_SYSTEM = (
+    "You are a workflow automation expert. In 1-2 sentences, explain why a "
+    "workflow step failed and how to fix it. Be concise and actionable."
+)
+
+
+async def analyze_failure(
+    error: dict[str, Any],
+    node_type: str | None,
+    node_config: dict[str, Any],
+) -> tuple[str, str]:
+    """Explain a failed step. Returns (explanation, source).
+
+    Tries the configured LLM provider order, then a deterministic heuristic so
+    it always returns something useful offline / in CI.
+    """
+    message = str((error or {}).get("message", ""))
+    attempts = (error or {}).get("attempts")
+    detail = (
+        f"A '{node_type}' step failed after {attempts} attempt(s) with error: "
+        f"{message}. Node config: {node_config}."
+    )
+    for source in _provider_order(settings.copilot_provider):
+        messages = [
+            {"role": "system", "content": _ROOT_CAUSE_SYSTEM},
+            {"role": "user", "content": detail},
+        ]
+        try:
+            if source == "ollama":
+                reply = await _chat_ollama(messages)
+            elif source == "openrouter":
+                reply = await _chat_openrouter(messages)
+            else:
+                reply = None
+        except (httpx.HTTPError, KeyError, ValueError):
+            reply = None
+        if reply:
+            return reply.strip(), source
+
+    return _heuristic_root_cause(message, node_config), "heuristic"
+
+
+def _heuristic_root_cause(message: str, node_config: dict[str, Any]) -> str:
+    """Deterministic diagnosis from the known failure-message patterns."""
+    msg = message.lower()
+    url = node_config.get("url") or "the target URL"
+    if "missing url" in msg:
+        return "This HTTP action has no URL configured — set the node's URL."
+    if "unsupported method" in msg:
+        return "The HTTP method isn't supported here; use GET or POST."
+    if "timeout" in msg or "timed out" in msg:
+        return (
+            f"The request to {url} timed out. The service may be slow or "
+            "unreachable — verify it's up, or add retries with backoff."
+        )
+    if re.search(r"http 5\d\d", msg):
+        return (
+            f"The server at {url} returned a 5xx error — likely a transient "
+            "failure. Retry with backoff or check the remote service's status."
+        )
+    if "request failed" in msg or "connection" in msg or "refused" in msg:
+        return (
+            f"The request couldn't reach {url}. Check the URL is correct and "
+            "the service is reachable from the server."
+        )
+    if "cycle" in msg:
+        return "The workflow has a cycle — remove the loop so it forms a DAG."
+    return (
+        f"The step failed: {message or 'unknown error'}. Review the node's "
+        "configuration and the data flowing into it."
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Coercion of LLM output into a valid spec
 # --------------------------------------------------------------------------- #

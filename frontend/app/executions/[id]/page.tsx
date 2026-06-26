@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Lightbulb } from "lucide-react";
 import { api } from "@/lib/api";
 import type { Execution, NodeExecution } from "@/types";
 
@@ -11,13 +11,25 @@ export default function ExecutionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [execution, setExecution] = useState<Execution | null>(null);
   const [flags, setFlags] = useState<string[]>([]);
+  const [rootCause, setRootCause] = useState<{
+    explanation: string;
+    source: string;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([api.getExecution(id), api.getExecutionAnomalies(id)])
-      .then(([ex, anomalies]) => {
+    api
+      .getExecution(id)
+      .then(async (ex) => {
         setExecution(ex);
+        const [anomalies, rc] = await Promise.all([
+          api.getExecutionAnomalies(id).catch(() => ({ flags: [] })),
+          ex.status === "failed"
+            ? api.getExecutionRootCause(id).catch(() => null)
+            : Promise.resolve(null),
+        ]);
         setFlags(anomalies.flags);
+        setRootCause(rc);
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -80,6 +92,19 @@ export default function ExecutionDetailPage() {
               <li key={i}>{f}</li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {rootCause && (
+        <div className="mb-6 rounded-xl border border-flow-200 bg-flow-50 p-4">
+          <div className="mb-1 flex items-center gap-2 font-medium text-flow-800">
+            <Lightbulb className="h-4 w-4" />
+            Root cause
+            <span className="rounded-full bg-flow-100 px-2 text-[10px] font-normal text-flow-700">
+              via {rootCause.source}
+            </span>
+          </div>
+          <p className="text-sm text-flow-900">{rootCause.explanation}</p>
         </div>
       )}
 
