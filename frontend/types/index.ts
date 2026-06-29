@@ -28,6 +28,16 @@ export interface TriggerConfig {
   config: Record<string, unknown>;
 }
 
+export interface WorkflowTemplate {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  nodes: FlowNode[];
+  edges: FlowEdge[];
+  trigger: TriggerConfig;
+}
+
 export interface Workflow {
   id: string;
   name: string;
