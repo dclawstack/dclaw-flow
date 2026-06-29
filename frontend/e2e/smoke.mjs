@@ -42,6 +42,22 @@ try {
     check("a workflow card exists to open", false);
   }
 
+  // New-workflow page: starter template gallery
+  await page.goto(`${APP}/workflows/new`, { waitUntil: "networkidle", timeout: 60000 });
+  await page.waitForTimeout(2000);
+  check(
+    "template gallery renders",
+    (await page.textContent("body")).includes("Start from a template"),
+  );
+  const tplCard = page.locator('button:has-text("nodes")').first();
+  if (await tplCard.count()) {
+    await tplCard.click();
+    await page.waitForURL(/\/workflows\/[0-9a-f-]{36}$/, { timeout: 35000 }).catch(() => {});
+    check("template instantiates into editor", /\/workflows\/[0-9a-f-]{36}$/.test(page.url()));
+  } else {
+    check("a template card exists", false);
+  }
+
   // Executions
   await page.goto(`${APP}/executions`, { waitUntil: "networkidle", timeout: 60000 });
   await page.waitForTimeout(2000);

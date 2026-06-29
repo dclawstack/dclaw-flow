@@ -24,6 +24,10 @@ export interface ExecutionList {
 
 export const api = {
   listWorkflows: () => fetchJson<WorkflowList>("/api/v1/flows/workflows"),
+  listTemplates: () =>
+    fetchJson<import("@/types").WorkflowTemplate[]>(
+      "/api/v1/flows/workflows/templates",
+    ),
   getWorkflow: (id: string) =>
     fetchJson<import("@/types").Workflow>(`/api/v1/flows/workflows/${id}`),
   createWorkflow: (body: unknown) =>

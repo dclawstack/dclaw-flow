@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import type { WorkflowTemplate } from "@/types";
 
 export default function NewWorkflowPage() {
   const router = useRouter();
@@ -14,6 +15,33 @@ export default function NewWorkflowPage() {
   const [prompt, setPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
+
+  // Starter templates
+  const [templates, setTemplates] = useState<WorkflowTemplate[]>([]);
+  const [usingTemplate, setUsingTemplate] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .listTemplates()
+      .then(setTemplates)
+      .catch(() => setTemplates([]));
+  }, []);
+
+  const handleUseTemplate = async (tpl: WorkflowTemplate) => {
+    setUsingTemplate(tpl.id);
+    try {
+      const workflow = await api.createWorkflow({
+        name: tpl.name,
+        description: tpl.description,
+        nodes: tpl.nodes,
+        edges: tpl.edges,
+        trigger: tpl.trigger,
+      });
+      router.push(`/workflows/${workflow.id}`);
+    } catch {
+      setUsingTemplate(null);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,6 +112,40 @@ export default function NewWorkflowPage() {
           {generating ? "Generating..." : "Generate Workflow"}
         </button>
       </div>
+
+      {templates.length > 0 && (
+        <div className="mb-8">
+          <h2 className="mb-3 text-sm font-semibold text-gray-700">
+            Start from a template
+          </h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {templates.map((tpl) => (
+              <button
+                key={tpl.id}
+                type="button"
+                onClick={() => handleUseTemplate(tpl)}
+                disabled={usingTemplate !== null}
+                className="flex flex-col rounded-xl border border-gray-200 bg-white p-4 text-left transition hover:border-flow-400 hover:shadow-sm disabled:opacity-50"
+              >
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold text-gray-900">
+                    {tpl.name}
+                  </span>
+                  <span className="rounded-full bg-flow-50 px-2 py-0.5 text-[11px] font-medium text-flow-700">
+                    {tpl.category}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500">{tpl.description}</p>
+                <span className="mt-2 text-[11px] text-gray-400">
+                  {usingTemplate === tpl.id
+                    ? "Creating…"
+                    : `${tpl.nodes.length} nodes`}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="mb-4 flex items-center gap-3 text-xs uppercase tracking-wide text-gray-400">
         <span className="h-px flex-1 bg-gray-200" />
