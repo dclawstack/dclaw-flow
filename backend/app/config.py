@@ -46,5 +46,31 @@ class Settings(BaseSettings):
     def cors_origin_list(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",")]
 
+    @property
+    def is_production(self) -> bool:
+        return self.app_env.lower() == "production"
+
+    @property
+    def cors_allow_credentials(self) -> bool:
+        # Credentials + a "*" origin is rejected by browsers and unsafe; never
+        # combine them.
+        return "*" not in self.cors_origin_list
+
+    def insecure_config_warnings(self) -> list[str]:
+        """Production misconfigurations worth shouting about at startup."""
+        if not self.is_production:
+            return []
+        default = "change-me-in-production"
+        warnings: list[str] = []
+        if self.webhook_secret == default:
+            warnings.append("WEBHOOK_SECRET is still the default value")
+        if self.admin_token == default:
+            warnings.append("ADMIN_TOKEN is still the default value")
+        if "*" in self.cors_origin_list:
+            warnings.append("CORS_ORIGINS contains a wildcard '*'")
+        if any("localhost" in o or "127.0.0.1" in o for o in self.cors_origin_list):
+            warnings.append("CORS_ORIGINS still includes a localhost origin")
+        return warnings
+
 
 settings = Settings()

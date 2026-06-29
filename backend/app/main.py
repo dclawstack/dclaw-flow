@@ -30,6 +30,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await seed_data()
+    for issue in settings.insecure_config_warnings():
+        logger.warning("insecure_config", issue=issue)
     logger.info("startup", env=settings.app_env)
     yield
     await engine.dispose()
@@ -59,7 +61,7 @@ app.add_middleware(ObservabilityMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
-    allow_credentials=True,
+    allow_credentials=settings.cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
