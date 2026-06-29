@@ -4,7 +4,6 @@ import asyncio
 import hashlib
 import hmac
 import json
-import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -13,11 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal, get_db
 from app.models import Execution, Workflow
+from app.observability import WEBHOOK_INGEST, logger
 from app.services.executor import execute_workflow
 from app.services.schema_inference import infer_schema, validate_payload
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
-logger = logging.getLogger("flow.webhooks")
 
 
 def verify_signature(body: bytes, secret: str, header: str) -> bool:
@@ -47,6 +46,7 @@ async def receive_webhook(
     try:
         payload = json.loads(body) if body else {}
     except json.JSONDecodeError as exc:
+        WEBHOOK_INGEST.labels("invalid_json").inc()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid JSON body",
@@ -54,6 +54,7 @@ async def receive_webhook(
 
     workflow = await _find_active_workflow(db, webhook_id)
     if not workflow:
+        WEBHOOK_INGEST.labels("not_found").inc()
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Webhook not found",
@@ -62,6 +63,7 @@ async def receive_webhook(
     config = workflow.trigger.get("config", {})
     secret = config.get("secret", "")
     if secret and not verify_signature(body, secret, x_flow_signature or ""):
+        WEBHOOK_INGEST.labels("unauthorized").inc()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid signature",
@@ -77,7 +79,13 @@ async def receive_webhook(
     else:
         schema_errors = validate_payload(payload, schema)
         if schema_errors:
-            logger.info("webhook %s payload mismatch: %s", webhook_id, schema_errors)
+            logger.info(
+                "webhook_payload_mismatch",
+                webhook_id=webhook_id,
+                errors=schema_errors,
+            )
+
+    WEBHOOK_INGEST.labels("accepted").inc()
 
     execution = Execution(
         workflow_id=workflow.id,
