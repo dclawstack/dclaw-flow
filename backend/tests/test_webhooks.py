@@ -116,6 +116,71 @@ async def test_signature_required_when_secret_set(client):
 
 
 @pytest.mark.asyncio
+async def test_signed_timestamp_accepted_then_replay_rejected(client):
+    await _make_webhook_workflow(client, path="hook-ts", secret="s3cret")
+    body = json.dumps({"a": 1}).encode()
+    ts = str(int(time.time()))
+    sig = "sha256=" + hmac.new(
+        b"s3cret", f"{ts}.".encode() + body, hashlib.sha256
+    ).hexdigest()
+    headers = {
+        "Content-Type": "application/json",
+        "X-Flow-Signature": sig,
+        "X-Flow-Timestamp": ts,
+    }
+    first = await client.post(
+        "/api/v1/flows/webhooks/hook-ts", content=body, headers=headers
+    )
+    assert first.status_code == 202
+    # Same signature again within the window → replayed.
+    replay = await client.post(
+        "/api/v1/flows/webhooks/hook-ts", content=body, headers=headers
+    )
+    assert replay.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_stale_timestamp_rejected(client):
+    await _make_webhook_workflow(client, path="hook-stale", secret="s3cret")
+    body = json.dumps({"a": 1}).encode()
+    ts = str(int(time.time()) - 10_000)  # well outside the tolerance window
+    sig = "sha256=" + hmac.new(
+        b"s3cret", f"{ts}.".encode() + body, hashlib.sha256
+    ).hexdigest()
+    r = await client.post(
+        "/api/v1/flows/webhooks/hook-stale",
+        content=body,
+        headers={
+            "Content-Type": "application/json",
+            "X-Flow-Signature": sig,
+            "X-Flow-Timestamp": ts,
+        },
+    )
+    assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_tampered_timestamp_rejected(client):
+    await _make_webhook_workflow(client, path="hook-tamper", secret="s3cret")
+    body = json.dumps({"a": 1}).encode()
+    signed_ts = str(int(time.time()))
+    sig = "sha256=" + hmac.new(
+        b"s3cret", f"{signed_ts}.".encode() + body, hashlib.sha256
+    ).hexdigest()
+    # Send a different (still-fresh) timestamp than the one that was signed.
+    r = await client.post(
+        "/api/v1/flows/webhooks/hook-tamper",
+        content=body,
+        headers={
+            "Content-Type": "application/json",
+            "X-Flow-Signature": sig,
+            "X-Flow-Timestamp": str(int(signed_ts) + 5),
+        },
+    )
+    assert r.status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_schema_inferred_then_validated_and_exposed(client):
     await _make_webhook_workflow(client, path="hook-schema")
     # First payload defines the schema.

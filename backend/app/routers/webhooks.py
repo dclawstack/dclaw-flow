@@ -1,8 +1,6 @@
 """Webhook trigger router (P0.3)."""
 
 import asyncio
-import hashlib
-import hmac
 import json
 from typing import Any
 
@@ -16,14 +14,13 @@ from app.observability import WEBHOOK_INGEST, logger
 from app.ratelimit import limiter, webhook_limit
 from app.services.executor import execute_workflow
 from app.services.schema_inference import infer_schema, validate_payload
+from app.webhook_security import (
+    is_replay,
+    timestamp_within_tolerance,
+    verify_signature,
+)
 
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
-
-
-def verify_signature(body: bytes, secret: str, header: str) -> bool:
-    """Validate an HMAC-SHA256 signature (X-Flow-Signature: sha256=<hex>)."""
-    digest = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(f"sha256={digest}", header)
 
 
 async def _find_active_workflow(db: AsyncSession, webhook_id: str) -> Workflow | None:
@@ -41,6 +38,7 @@ async def receive_webhook(
     webhook_id: str,
     request: Request,
     x_flow_signature: str | None = Header(default=None),
+    x_flow_timestamp: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     """Accept an arbitrary JSON payload and trigger the matching workflow."""
@@ -64,12 +62,43 @@ async def receive_webhook(
 
     config = workflow.trigger.get("config", {})
     secret = config.get("secret", "")
-    if secret and not verify_signature(body, secret, x_flow_signature or ""):
-        WEBHOOK_INGEST.labels("unauthorized").inc()
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid signature",
-        )
+    if secret:
+        # A timestamp opts the request into replay protection: it is folded into
+        # the signed message, must be fresh, and the signature can't be reused.
+        # Without one we fall back to body-only signing for backward compat —
+        # unless the webhook is configured to require a timestamp.
+        if x_flow_timestamp is not None:
+            if not timestamp_within_tolerance(x_flow_timestamp):
+                WEBHOOK_INGEST.labels("stale_timestamp").inc()
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Timestamp outside tolerance window",
+                )
+            if not verify_signature(body, secret, x_flow_signature, x_flow_timestamp):
+                WEBHOOK_INGEST.labels("unauthorized").inc()
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid signature",
+                )
+            if is_replay(x_flow_signature or ""):
+                WEBHOOK_INGEST.labels("replay").inc()
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Replayed request",
+                )
+        else:
+            if config.get("require_timestamp"):
+                WEBHOOK_INGEST.labels("missing_timestamp").inc()
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="X-Flow-Timestamp required",
+                )
+            if not verify_signature(body, secret, x_flow_signature):
+                WEBHOOK_INGEST.labels("unauthorized").inc()
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid signature",
+                )
 
     # First payload teaches the schema; later payloads are validated against it.
     schema_errors: list[str] = []
