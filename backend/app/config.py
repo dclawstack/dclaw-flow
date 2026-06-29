@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     webhook_rate_limit: str = "60/minute"
     copilot_rate_limit: str = "20/minute"
 
+    # --- Webhook replay protection (signed-timestamp tolerance, seconds) ---
+    webhook_timestamp_tolerance: int = 300
+
     # --- AI Flow Copilot (P0.1) ---
     # Provider order for natural-language workflow generation. "auto" tries the
     # local Ollama model first, then the OpenRouter cloud model, then falls back
