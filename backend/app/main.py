@@ -3,9 +3,10 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
+from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
 
 from app.config import settings
@@ -16,6 +17,7 @@ from app.observability import (
     logger,
     metrics_response,
 )
+from app.ratelimit import limiter
 from app.routers import copilot, executions, webhooks, workflows
 from app.seed import seed_data
 
@@ -39,6 +41,19 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+app.state.limiter = limiter
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> Response:
+    """Return a 429 with a Retry-After hint when a client exceeds its limit."""
+    return JSONResponse(
+        {"detail": f"Rate limit exceeded: {exc.detail}"},
+        status_code=429,
+        headers={"Retry-After": "60"},
+    )
+
 
 app.add_middleware(ObservabilityMiddleware)
 app.add_middleware(

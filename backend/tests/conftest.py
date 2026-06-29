@@ -6,6 +6,7 @@ from sqlalchemy.pool import NullPool
 
 from app.main import app
 from app.database import get_db, Base
+from app.ratelimit import limiter
 
 TEST_DATABASE_URL = os.environ.get(
     "DATABASE_URL",
@@ -34,6 +35,16 @@ async def setup_db():
     yield
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+
+
+@pytest_asyncio.fixture(autouse=True)
+def reset_limiter():
+    """Disable rate limiting by default so it can't flake the suite; the
+    dedicated rate-limit test re-enables it explicitly."""
+    limiter.enabled = False
+    limiter.reset()
+    yield
+    limiter.reset()
 
 
 @pytest_asyncio.fixture
