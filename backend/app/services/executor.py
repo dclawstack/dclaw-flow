@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import logging
 import re
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -13,9 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.models import Execution, NodeExecution, Workflow
+from app.observability import EXECUTIONS, logger
 from app.services.engine import topological_sort
 
-logger = logging.getLogger("flow.executor")
 _alert_tasks: set[asyncio.Task[None]] = set()
 
 
@@ -46,6 +45,7 @@ async def execute_workflow(
         execution.error = {"message": str(e)}
         execution.completed_at = datetime.now(timezone.utc)
         await db.commit()
+        EXECUTIONS.labels("failed").inc()
         return
 
     incoming: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -138,6 +138,13 @@ async def execute_workflow(
                 }
                 execution.completed_at = datetime.now(timezone.utc)
                 await db.commit()
+                EXECUTIONS.labels("failed").inc()
+                logger.info(
+                    "execution_failed",
+                    execution_id=str(execution.id),
+                    node_id=node_id,
+                    attempts=max_attempts,
+                )
                 _fire_alert(_alert_payload(workflow, execution))
                 return
             # Caught by an error/fallback path — continue the topo loop.
@@ -145,6 +152,7 @@ async def execute_workflow(
     execution.status = "completed"
     execution.completed_at = datetime.now(timezone.utc)
     await db.commit()
+    EXECUTIONS.labels("completed").inc()
 
 
 def _edge_active(
