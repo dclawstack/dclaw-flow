@@ -46,6 +46,16 @@ class WorkflowCreate(BaseModel):
     trigger: TriggerConfig = Field(default_factory=TriggerConfig)
 
 
+class WorkflowTemplate(BaseModel):
+    id: str
+    name: str
+    description: str
+    category: str
+    nodes: list[NodeSchema]
+    edges: list[EdgeSchema]
+    trigger: TriggerConfig
+
+
 class WorkflowUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
