@@ -2,12 +2,13 @@
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models import Workflow
+from app.ratelimit import copilot_limit, limiter
 from app.schemas import (
     CopilotChatRequest,
     CopilotChatResponse,
@@ -26,7 +27,9 @@ router = APIRouter(prefix="/copilot", tags=["copilot"])
 
 
 @router.post("/generate", response_model=CopilotGenerateResponse)
+@limiter.limit(copilot_limit)
 async def generate(
+    request: Request,
     data: CopilotGenerateRequest,
     db: AsyncSession = Depends(get_db),
 ) -> CopilotGenerateResponse:
@@ -73,7 +76,9 @@ async def suggest(
 
 
 @router.post("/chat", response_model=CopilotChatResponse)
+@limiter.limit(copilot_limit)
 async def chat(
+    request: Request,
     data: CopilotChatRequest,
     db: AsyncSession = Depends(get_db),
 ) -> CopilotChatResponse:

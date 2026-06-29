@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import AsyncSessionLocal, get_db
 from app.models import Execution, Workflow
 from app.observability import WEBHOOK_INGEST, logger
+from app.ratelimit import limiter, webhook_limit
 from app.services.executor import execute_workflow
 from app.services.schema_inference import infer_schema, validate_payload
 
@@ -35,6 +36,7 @@ async def _find_active_workflow(db: AsyncSession, webhook_id: str) -> Workflow |
 
 
 @router.post("/{webhook_id}", status_code=status.HTTP_202_ACCEPTED)
+@limiter.limit(webhook_limit)
 async def receive_webhook(
     webhook_id: str,
     request: Request,

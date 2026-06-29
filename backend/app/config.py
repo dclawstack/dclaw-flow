@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     alert_webhook_url: str = ""
     cors_origins: str = "http://localhost:3000"
 
+    # --- Rate limiting (slowapi, in-memory; FOSS, single-instance) ---
+    rate_limit_enabled: bool = True
+    webhook_rate_limit: str = "60/minute"
+    copilot_rate_limit: str = "20/minute"
+
     # --- AI Flow Copilot (P0.1) ---
     # Provider order for natural-language workflow generation. "auto" tries the
     # local Ollama model first, then the OpenRouter cloud model, then falls back
