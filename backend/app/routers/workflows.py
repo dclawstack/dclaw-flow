@@ -17,10 +17,12 @@ from app.schemas import (
     WorkflowCreate,
     WorkflowListResponse,
     WorkflowResponse,
+    WorkflowTemplate,
     WorkflowUpdate,
 )
 from app.services.engine import validate_workflow
 from app.services.executor import execute_workflow
+from app.templates import list_templates
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
 
@@ -54,6 +56,12 @@ async def list_workflows(
     total_result = await db.execute(select(func.count()).select_from(Workflow))
     total = total_result.scalar() or 0
     return {"items": workflows, "total": total}
+
+
+@router.get("/templates", response_model=list[WorkflowTemplate])
+async def get_templates() -> list[dict[str, Any]]:
+    """Curated starter templates (static; defined before /{workflow_id})."""
+    return list_templates()
 
 
 @router.get("/{workflow_id}", response_model=WorkflowResponse)
