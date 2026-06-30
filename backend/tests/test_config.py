@@ -19,6 +19,7 @@ def test_production_flags_default_secrets_and_bad_cors():
     assert "WEBHOOK_SECRET" in issues
     assert "ADMIN_TOKEN" in issues
     assert "JWT_SECRET" in issues
+    assert "CONNECTIONS_SECRET_KEY" in issues
     assert "wildcard" in issues
     assert "localhost" in issues
 
@@ -29,6 +30,7 @@ def test_production_clean_config_has_no_warnings():
         webhook_secret="real-secret",
         admin_token="real-token",
         jwt_secret="real-jwt-secret",
+        connections_secret_key="real-conn-key",
         cors_origins="https://app.example.com",
     )
     assert s.insecure_config_warnings() == []

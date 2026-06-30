@@ -31,6 +31,23 @@ class TokenResponse(BaseModel):
     user: UserResponse
 
 
+class ConnectionCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    connector_type: str
+    # The auth fields for the connector (e.g. {"token": "..."} or
+    # {"webhook_url": "..."}); encrypted at rest, never returned.
+    secret: dict[str, Any]
+
+
+class ConnectionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    connector_type: str
+    created_at: datetime
+
+
 class RetryPolicy(BaseModel):
     max_attempts: int = Field(default=1, ge=1, le=10)
     backoff_strategy: Literal["none", "fixed", "exponential"] = "none"

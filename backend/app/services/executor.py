@@ -3,6 +3,7 @@
 import asyncio
 import json
 import re
+import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any
@@ -11,9 +12,12 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.models import Execution, NodeExecution, Workflow
+from app.connectors import run_connector
+from app.crypto import decrypt_json
+from app.models import Connection, Execution, NodeExecution, Workflow
 from app.observability import EXECUTIONS, logger
 from app.services.engine import topological_sort
+from app.services.http_action import run_http_action
 
 _alert_tasks: set[asyncio.Task[None]] = set()
 
@@ -96,7 +100,10 @@ async def execute_workflow(
                 node_exec.input = node_input
                 await db.commit()
 
-                output = await run_node(node, node_input)
+                run_input = await _resolve_connection(
+                    db, node, node_input, workflow.owner_id
+                )
+                output = await run_node(node, run_input)
                 outputs[node_id] = output
                 active.add(node_id)
 
@@ -281,6 +288,9 @@ async def run_node(
         action_type = config.get("action_type", "http")
         if action_type == "http":
             return await run_http_action(node_input)
+        if action_type == "connector":
+            connector_type, secret = node_input["__connection"]
+            return await run_connector(connector_type, secret, node_input)
         return {"result": "noop"}
 
     if node_type == "conditional":
@@ -301,43 +311,28 @@ async def run_node(
     return {"result": "noop"}
 
 
-async def run_http_action(node_input: dict[str, Any]) -> dict[str, Any]:
-    """Execute an HTTP request node."""
-    url = node_input.get("url", "")
-    method = node_input.get("method", "GET").upper()
-    headers = node_input.get("headers", {})
-    body = node_input.get("body")
+async def _resolve_connection(
+    db: AsyncSession,
+    node: dict[str, Any],
+    node_input: dict[str, Any],
+    owner_id: uuid.UUID,
+) -> dict[str, Any]:
+    """For a connector action, decrypt its connection into a COPY of node_input.
 
-    if not url:
-        return {"status": 0, "error": "Missing URL"}
-
-    async with httpx.AsyncClient(timeout=30) as client:
-        try:
-            if method == "GET":
-                response = await client.get(url, headers=headers)
-            elif method == "POST":
-                response = await client.post(
-                    url,
-                    headers=headers,
-                    json=body if isinstance(body, dict) else None,
-                    content=body if isinstance(body, str) else None,
-                )
-            else:
-                return {"status": 0, "error": f"Unsupported method: {method}"}
-        except httpx.RequestError as e:
-            # Transport failures are retriable -> raise so the retry loop sees it.
-            raise RuntimeError(f"HTTP request failed: {e}") from e
-
-    # 5xx is a (likely transient) server error -> retriable; 4xx is a valid
-    # response the workflow can branch on, so it flows through as output.
-    if response.status_code >= 500:
-        raise RuntimeError(f"HTTP {response.status_code} from {url}")
-
-    return {
-        "status": response.status_code,
-        "body": response.text,
-        "headers": dict(response.headers),
-    }
+    The secret is deliberately kept out of the persisted node_exec.input.
+    """
+    config = node.get("config", {})
+    if node.get("type") != "action" or config.get("action_type") != "connector":
+        return node_input
+    try:
+        connection_id = uuid.UUID(str(config.get("connection_id")))
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("Connection not found") from exc
+    connection = await db.get(Connection, connection_id)
+    if connection is None or connection.owner_id != owner_id:
+        raise RuntimeError("Connection not found")
+    secret = decrypt_json(connection.encrypted_secret)
+    return {**node_input, "__connection": (connection.connector_type, secret)}
 
 
 def evaluate_expression(expression: str, context: dict[str, Any]) -> bool:

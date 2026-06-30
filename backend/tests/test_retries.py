@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import Execution, NodeExecution, Workflow
 from app.services import executor
-from app.services.executor import execute_workflow, run_http_action
+from app.services.executor import execute_workflow
+from app.services.http_action import run_http_action
 from tests.conftest import test_engine
 
 

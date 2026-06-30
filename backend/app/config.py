@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
 
+    # --- Connectors (encryption key for stored third-party credentials) ---
+    connections_secret_key: str = "change-me-in-production"
+
     # --- Durable execution queue ---
     queue_worker_enabled: bool = True
     queue_poll_seconds: float = 2.0
@@ -80,6 +83,8 @@ class Settings(BaseSettings):
             warnings.append("ADMIN_TOKEN is still the default value")
         if self.jwt_secret == default:
             warnings.append("JWT_SECRET is still the default value")
+        if self.connections_secret_key == default:
+            warnings.append("CONNECTIONS_SECRET_KEY is still the default value")
         if "*" in self.cors_origin_list:
             warnings.append("CORS_ORIGINS contains a wildcard '*'")
         if any("localhost" in o or "127.0.0.1" in o for o in self.cors_origin_list):
