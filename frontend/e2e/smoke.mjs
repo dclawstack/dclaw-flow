@@ -69,6 +69,22 @@ try {
     check("a workflow card exists to open", false);
   }
 
+  // Connections: create one and confirm it lists
+  await page.goto(`${APP}/connections`, { waitUntil: "networkidle", timeout: 60000 });
+  await page.waitForTimeout(2000);
+  check("connections page renders", (await page.textContent("body")).includes("Add a connection"));
+  await page.fill('input', `smoke-conn-${Date.now()}`); // first input = Name
+  // Slack is the default-ish; ensure the webhook_url field is present then fill it
+  const secretInput = page.locator('input[type="password"]').first();
+  if (await secretInput.count()) {
+    await secretInput.fill("https://hooks.slack.test/smoke");
+    await page.click('button:has-text("Add connection")');
+    await page.waitForTimeout(2500);
+    check("connection created + listed", (await page.textContent("body")).includes("Your connections") && (await page.locator('button[aria-label^="Delete"]').count()) > 0);
+  } else {
+    check("connection secret field present", false);
+  }
+
   // Executions
   await page.goto(`${APP}/executions`, { waitUntil: "networkidle", timeout: 60000 });
   await page.waitForTimeout(2000);

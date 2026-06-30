@@ -27,6 +27,9 @@ export function SiteNav() {
               <a href="/executions" className="hover:text-flow-600">
                 Executions
               </a>
+              <a href="/connections" className="hover:text-flow-600">
+                Connections
+              </a>
             </div>
           )}
         </div>

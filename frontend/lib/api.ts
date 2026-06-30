@@ -42,6 +42,26 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
   getMe: () => fetchJson<import("@/types").AuthUser>("/api/v1/flows/auth/me"),
+  connectorCatalog: () =>
+    fetchJson<import("@/types").ConnectorCatalog>(
+      "/api/v1/flows/connections/catalog",
+    ),
+  listConnections: () =>
+    fetchJson<import("@/types").Connection[]>("/api/v1/flows/connections"),
+  createConnection: (body: {
+    name: string;
+    connector_type: string;
+    secret: Record<string, string>;
+  }) =>
+    fetchJson<import("@/types").Connection>("/api/v1/flows/connections", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  deleteConnection: (id: string) =>
+    fetch(`${API_BASE}/api/v1/flows/connections/${id}`, {
+      method: "DELETE",
+      headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
+    }),
   listWorkflows: () => fetchJson<WorkflowList>("/api/v1/flows/workflows"),
   listTemplates: () =>
     fetchJson<import("@/types").WorkflowTemplate[]>(
