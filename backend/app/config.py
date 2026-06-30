@@ -26,9 +26,15 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     webhook_rate_limit: str = "60/minute"
     copilot_rate_limit: str = "20/minute"
+    auth_rate_limit: str = "10/minute"
 
     # --- Webhook replay protection (signed-timestamp tolerance, seconds) ---
     webhook_timestamp_tolerance: int = 300
+
+    # --- Auth (JWT) ---
+    jwt_secret: str = "change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
 
     # --- AI Flow Copilot (P0.1) ---
     # Provider order for natural-language workflow generation. "auto" tries the
@@ -66,6 +72,8 @@ class Settings(BaseSettings):
             warnings.append("WEBHOOK_SECRET is still the default value")
         if self.admin_token == default:
             warnings.append("ADMIN_TOKEN is still the default value")
+        if self.jwt_secret == default:
+            warnings.append("JWT_SECRET is still the default value")
         if "*" in self.cors_origin_list:
             warnings.append("CORS_ORIGINS contains a wildcard '*'")
         if any("localhost" in o or "127.0.0.1" in o for o in self.cors_origin_list):

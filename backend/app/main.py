@@ -18,7 +18,7 @@ from app.observability import (
     metrics_response,
 )
 from app.ratelimit import limiter
-from app.routers import copilot, executions, webhooks, workflows
+from app.routers import auth, copilot, executions, webhooks, workflows
 from app.seed import seed_data
 
 configure_logging(settings.log_level)
@@ -66,6 +66,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router, prefix="/api/v1/flows")
 app.include_router(workflows.router, prefix="/api/v1/flows")
 app.include_router(executions.router, prefix="/api/v1/flows")
 app.include_router(webhooks.router, prefix="/api/v1/flows")
