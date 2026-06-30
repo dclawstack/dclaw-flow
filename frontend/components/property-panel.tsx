@@ -1,9 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Copy, Check } from "lucide-react";
 import { api, webhookUrl } from "@/lib/api";
-import type { FlowEdge, FlowNode, RetryPolicy, TriggerConfig } from "@/types";
+import type {
+  Connection,
+  FlowEdge,
+  FlowNode,
+  RetryPolicy,
+  TriggerConfig,
+} from "@/types";
 
 interface PropertyPanelProps {
   node: FlowNode | null;
@@ -289,6 +295,143 @@ function SaveButton({
   );
 }
 
+function Field({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="mb-3">
+      <label className="mb-1 block text-xs font-medium text-gray-600">{label}</label>
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded border px-2 py-1 text-sm"
+      />
+    </div>
+  );
+}
+
+function ActionEditor({
+  node,
+  updateConfig,
+}: {
+  node: FlowNode;
+  updateConfig: (key: string, value: unknown) => void;
+}) {
+  const actionType = (node.config.action_type as string) || "http";
+  const [connections, setConnections] = useState<Connection[]>([]);
+
+  useEffect(() => {
+    if (actionType === "connector") {
+      api.listConnections().then(setConnections).catch(() => setConnections([]));
+    }
+  }, [actionType]);
+
+  const selected = connections.find((c) => c.id === node.config.connection_id);
+
+  return (
+    <>
+      <div className="mb-3">
+        <label className="mb-1 block text-xs font-medium text-gray-600">
+          Action type
+        </label>
+        <select
+          value={actionType}
+          onChange={(e) => updateConfig("action_type", e.target.value)}
+          className="w-full rounded border px-2 py-1 text-sm"
+        >
+          <option value="http">HTTP request</option>
+          <option value="connector">Connector</option>
+        </select>
+      </div>
+
+      {actionType === "http" && (
+        <>
+          <Field
+            label="URL"
+            value={(node.config.url as string) || ""}
+            onChange={(v) => updateConfig("url", v)}
+          />
+          <div className="mb-3">
+            <label className="mb-1 block text-xs font-medium text-gray-600">
+              Method
+            </label>
+            <select
+              value={(node.config.method as string) || "GET"}
+              onChange={(e) => updateConfig("method", e.target.value)}
+              className="w-full rounded border px-2 py-1 text-sm"
+            >
+              <option value="GET">GET</option>
+              <option value="POST">POST</option>
+            </select>
+          </div>
+        </>
+      )}
+
+      {actionType === "connector" && (
+        <>
+          <div className="mb-3">
+            <label className="mb-1 block text-xs font-medium text-gray-600">
+              Connection
+            </label>
+            <select
+              value={(node.config.connection_id as string) || ""}
+              onChange={(e) => updateConfig("connection_id", e.target.value)}
+              className="w-full rounded border px-2 py-1 text-sm"
+            >
+              <option value="">Select…</option>
+              {connections.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({c.connector_type})
+                </option>
+              ))}
+            </select>
+            {connections.length === 0 && (
+              <p className="mt-1 text-xs text-gray-400">
+                No connections yet — add one on the Connections page.
+              </p>
+            )}
+          </div>
+          {selected?.connector_type === "slack_webhook" && (
+            <Field
+              label="Message text"
+              value={(node.config.text as string) || ""}
+              onChange={(v) => updateConfig("text", v)}
+            />
+          )}
+          {selected?.connector_type === "authenticated_http" && (
+            <>
+              <Field
+                label="URL"
+                value={(node.config.url as string) || ""}
+                onChange={(v) => updateConfig("url", v)}
+              />
+              <div className="mb-3">
+                <label className="mb-1 block text-xs font-medium text-gray-600">
+                  Method
+                </label>
+                <select
+                  value={(node.config.method as string) || "GET"}
+                  onChange={(e) => updateConfig("method", e.target.value)}
+                  className="w-full rounded border px-2 py-1 text-sm"
+                >
+                  <option value="GET">GET</option>
+                  <option value="POST">POST</option>
+                </select>
+              </div>
+            </>
+          )}
+        </>
+      )}
+    </>
+  );
+}
+
 export function PropertyPanel({
   node,
   edge,
@@ -378,31 +521,7 @@ export function PropertyPanel({
       )}
 
       {node.type === "action" && (
-        <>
-          <div className="mb-3">
-            <label className="mb-1 block text-xs font-medium text-gray-600">
-              URL
-            </label>
-            <input
-              value={(node.config.url as string) || ""}
-              onChange={(e) => updateConfig("url", e.target.value)}
-              className="w-full rounded border px-2 py-1 text-sm"
-            />
-          </div>
-          <div className="mb-3">
-            <label className="mb-1 block text-xs font-medium text-gray-600">
-              Method
-            </label>
-            <select
-              value={(node.config.method as string) || "GET"}
-              onChange={(e) => updateConfig("method", e.target.value)}
-              className="w-full rounded border px-2 py-1 text-sm"
-            >
-              <option value="GET">GET</option>
-              <option value="POST">POST</option>
-            </select>
-          </div>
-        </>
+        <ActionEditor node={node} updateConfig={updateConfig} />
       )}
 
       {node.type === "delay" && (

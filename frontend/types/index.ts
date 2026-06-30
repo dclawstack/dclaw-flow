@@ -40,6 +40,18 @@ export interface TokenResponse {
   user: AuthUser;
 }
 
+export interface Connection {
+  id: string;
+  name: string;
+  connector_type: string;
+  created_at: string;
+}
+
+export type ConnectorCatalog = Record<
+  string,
+  { label: string; secret_fields: string[]; node_fields: string[] }
+>;
+
 export interface WorkflowTemplate {
   id: string;
   name: string;
