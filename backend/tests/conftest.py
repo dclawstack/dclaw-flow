@@ -7,6 +7,7 @@ from sqlalchemy.pool import NullPool
 
 from app.auth import create_access_token
 from app.database import Base, get_db
+from app.database import engine as app_engine
 from app.main import app
 from app.models import SYSTEM_USER_ID, User
 from app.ratelimit import limiter
@@ -40,6 +41,9 @@ async def setup_db():
         s.add(User(id=SYSTEM_USER_ID, email="system@example.com", hashed_password="!"))
         await s.commit()
     yield
+    # The queue path uses the app engine (AsyncSessionLocal); dispose it so a
+    # pooled connection can't leak into the next test's event loop.
+    await app_engine.dispose()
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
 

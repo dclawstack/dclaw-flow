@@ -109,6 +109,12 @@ class Execution(Base):
         nullable=True,
     )
     error: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    # Durable queue: lease expiry while claimed, and claim count (dead-letter guard).
+    locked_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     workflow: Mapped["Workflow"] = relationship(back_populates="executions")
     node_executions: Mapped[list["NodeExecution"]] = relationship(

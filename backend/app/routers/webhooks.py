@@ -8,11 +8,11 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import AsyncSessionLocal, get_db
+from app.database import get_db
 from app.models import Execution, Workflow
 from app.observability import WEBHOOK_INGEST, logger
 from app.ratelimit import limiter, webhook_limit
-from app.services.executor import execute_workflow
+from app.services.queue import run_execution_durable
 from app.services.schema_inference import infer_schema, validate_payload
 from app.webhook_security import (
     is_replay,
@@ -128,7 +128,7 @@ async def receive_webhook(
     await db.commit()
     await db.refresh(execution)
 
-    asyncio.create_task(run_webhook_execution(workflow, execution))
+    asyncio.create_task(run_execution_durable(execution.id))
 
     return {
         "execution_id": str(execution.id),
@@ -159,8 +159,3 @@ async def get_webhook_schema(
         "workflow_id": str(workflow.id),
         "schema": config.get("inferred_schema"),
     }
-
-
-async def run_webhook_execution(workflow: Workflow, execution: Execution) -> None:
-    async with AsyncSessionLocal() as session:
-        await execute_workflow(session, workflow, execution)
