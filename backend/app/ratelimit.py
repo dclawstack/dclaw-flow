@@ -16,3 +16,8 @@ def webhook_limit() -> str:
 def copilot_limit() -> str:
     """Per-IP limit for the (expensive) AI copilot endpoints."""
     return settings.copilot_rate_limit
+
+
+def auth_limit() -> str:
+    """Per-IP limit for auth endpoints (brute-force protection)."""
+    return settings.auth_rate_limit
