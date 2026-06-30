@@ -79,7 +79,7 @@ try {
   if (await secretInput.count()) {
     await secretInput.fill("https://hooks.slack.test/smoke");
     await page.click('button:has-text("Add connection")');
-    await page.waitForTimeout(2500);
+    await page.waitForTimeout(6000); // create + refresh; generous for the free-tier backend
     check("connection created + listed", (await page.textContent("body")).includes("Your connections") && (await page.locator('button[aria-label^="Delete"]').count()) > 0);
   } else {
     check("connection secret field present", false);
