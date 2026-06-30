@@ -2,12 +2,14 @@
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import get_current_user
 from app.database import get_db
-from app.models import Workflow
+from app.models import User, Workflow
+from app.ownership import get_owned_workflow
 from app.ratelimit import copilot_limit, limiter
 from app.schemas import (
     CopilotChatRequest,
@@ -32,6 +34,7 @@ async def generate(
     request: Request,
     data: CopilotGenerateRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> CopilotGenerateResponse:
     """Generate a workflow from a natural-language description."""
     spec, source, model = await generate_workflow_spec(data.description, data.name)
@@ -42,6 +45,7 @@ async def generate(
         workflow = Workflow(
             name=spec.name,
             description=spec.description,
+            owner_id=current_user.id,
             nodes=[node.model_dump() for node in spec.nodes],
             edges=[edge.model_dump() for edge in spec.edges],
             trigger=spec.trigger.model_dump(),
@@ -64,14 +68,10 @@ async def generate(
 async def suggest(
     workflow_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> CopilotSuggestResponse:
     """Suggest sensible next nodes for an existing workflow."""
-    workflow = await db.get(Workflow, workflow_id)
-    if not workflow:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workflow not found",
-        )
+    workflow = await get_owned_workflow(db, workflow_id, current_user)
     return CopilotSuggestResponse(suggestions=suggest_next_nodes(workflow))
 
 
@@ -81,8 +81,13 @@ async def chat(
     request: Request,
     data: CopilotChatRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> CopilotChatResponse:
     """Floating-copilot chat turn, grounded in the user's existing workflows."""
-    result = await db.execute(select(Workflow.name).limit(50))
+    result = await db.execute(
+        select(Workflow.name)
+        .where(Workflow.owner_id == current_user.id)
+        .limit(50)
+    )
     workflow_names = [name for (name,) in result.all()]
     return await chat_reply(data.message, data.history, workflow_names)

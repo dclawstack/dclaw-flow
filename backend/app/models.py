@@ -15,6 +15,10 @@ def now_utc() -> datetime:
     return datetime.now(timezone.utc)
 
 
+# Non-loginable system account that owns pre-auth / internally-created workflows.
+SYSTEM_USER_ID = uuid.UUID("00000000-0000-0000-0000-000000000000")
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -44,8 +48,9 @@ class Workflow(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     owner_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
+        ForeignKey("users.id"),
         nullable=False,
-        default=uuid.uuid4,
+        default=SYSTEM_USER_ID,
     )
     status: Mapped[str] = mapped_column(
         String,

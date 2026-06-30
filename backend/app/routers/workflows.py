@@ -4,12 +4,14 @@ import asyncio
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import get_current_user
 from app.database import AsyncSessionLocal, get_db
-from app.models import Execution, Workflow
+from app.models import Execution, User, Workflow
+from app.ownership import get_owned_workflow
 from app.schemas import (
     ExecutionCreate,
     ExecutionResponse,
@@ -31,10 +33,12 @@ router = APIRouter(prefix="/workflows", tags=["workflows"])
 async def create_workflow(
     data: WorkflowCreate,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Workflow:
     workflow = Workflow(
         name=data.name,
         description=data.description,
+        owner_id=current_user.id,
         nodes=[node.model_dump() for node in data.nodes],
         edges=[edge.model_dump() for edge in data.edges],
         trigger=data.trigger.model_dump(),
@@ -50,10 +54,16 @@ async def list_workflows(
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
-    result = await db.execute(select(Workflow).offset(skip).limit(limit))
+    owned = Workflow.owner_id == current_user.id
+    result = await db.execute(
+        select(Workflow).where(owned).offset(skip).limit(limit)
+    )
     workflows = result.scalars().all()
-    total_result = await db.execute(select(func.count()).select_from(Workflow))
+    total_result = await db.execute(
+        select(func.count()).select_from(Workflow).where(owned)
+    )
     total = total_result.scalar() or 0
     return {"items": workflows, "total": total}
 
@@ -68,14 +78,9 @@ async def get_templates() -> list[dict[str, Any]]:
 async def get_workflow(
     workflow_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Workflow:
-    workflow = await db.get(Workflow, workflow_id)
-    if not workflow:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workflow not found",
-        )
-    return workflow
+    return await get_owned_workflow(db, workflow_id, current_user)
 
 
 @router.patch("/{workflow_id}", response_model=WorkflowResponse)
@@ -83,13 +88,9 @@ async def update_workflow(
     workflow_id: uuid.UUID,
     data: WorkflowUpdate,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Workflow:
-    workflow = await db.get(Workflow, workflow_id)
-    if not workflow:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workflow not found",
-        )
+    workflow = await get_owned_workflow(db, workflow_id, current_user)
 
     # model_dump already recurses into NodeSchema/EdgeSchema/TriggerConfig, so
     # nodes/edges/trigger arrive as plain dicts ready for the JSON columns.
@@ -107,13 +108,9 @@ async def update_workflow(
 async def delete_workflow(
     workflow_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> None:
-    workflow = await db.get(Workflow, workflow_id)
-    if not workflow:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workflow not found",
-        )
+    workflow = await get_owned_workflow(db, workflow_id, current_user)
     await db.delete(workflow)
     await db.commit()
 
@@ -122,13 +119,9 @@ async def delete_workflow(
 async def validate_workflow_endpoint(
     workflow_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> ValidationResponse:
-    workflow = await db.get(Workflow, workflow_id)
-    if not workflow:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workflow not found",
-        )
+    workflow = await get_owned_workflow(db, workflow_id, current_user)
     return validate_workflow(workflow)
 
 
@@ -138,13 +131,9 @@ async def list_workflow_executions(
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
-    workflow = await db.get(Workflow, workflow_id)
-    if not workflow:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workflow not found",
-        )
+    await get_owned_workflow(db, workflow_id, current_user)
     result = await db.execute(
         select(Execution)
         .where(Execution.workflow_id == workflow_id)
@@ -167,13 +156,9 @@ async def execute_workflow_endpoint(
     workflow_id: uuid.UUID,
     data: ExecutionCreate,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Execution:
-    workflow = await db.get(Workflow, workflow_id)
-    if not workflow:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Workflow not found",
-        )
+    workflow = await get_owned_workflow(db, workflow_id, current_user)
 
     execution = Execution(
         workflow_id=workflow_id,
