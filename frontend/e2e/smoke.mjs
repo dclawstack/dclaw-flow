@@ -37,21 +37,9 @@ try {
   await page.waitForTimeout(800);
   check("copilot widget opens", (await page.locator("text=Flow Copilot").count()) > 0);
 
-  // Workflows list + editor canvas
-  await page.goto(`${APP}/workflows`, { waitUntil: "networkidle", timeout: 60000 });
-  await page.waitForTimeout(2500);
-  check("workflows list renders", (await page.textContent("body")).includes("New Workflow"));
-  const card = page.locator('a[href^="/workflows/"]:not([href$="/new"])').first();
-  if (await card.count()) {
-    await card.click();
-    await page.waitForSelector(".react-flow", { timeout: 35000 }).catch(() => {});
-    check("editor canvas renders", (await page.locator(".react-flow").count()) > 0);
-    check("canvas has nodes", (await page.locator(".react-flow__node").count()) > 0);
-  } else {
-    check("a workflow card exists to open", false);
-  }
-
-  // New-workflow page: starter template gallery
+  // New-workflow page: starter template gallery. A freshly-signed-up user owns
+  // no workflows yet, so create one here first — this is also what gives the
+  // workflows list (below) a card to open.
   await page.goto(`${APP}/workflows/new`, { waitUntil: "networkidle", timeout: 60000 });
   await page.waitForTimeout(2000);
   check(
@@ -65,6 +53,20 @@ try {
     check("template instantiates into editor", /\/workflows\/[0-9a-f-]{36}$/.test(page.url()));
   } else {
     check("a template card exists", false);
+  }
+
+  // Workflows list + editor canvas (the template just created one to open).
+  await page.goto(`${APP}/workflows`, { waitUntil: "networkidle", timeout: 60000 });
+  await page.waitForTimeout(2500);
+  check("workflows list renders", (await page.textContent("body")).includes("New Workflow"));
+  const card = page.locator('a[href^="/workflows/"]:not([href$="/new"])').first();
+  if (await card.count()) {
+    await card.click();
+    await page.waitForSelector(".react-flow", { timeout: 35000 }).catch(() => {});
+    check("editor canvas renders", (await page.locator(".react-flow").count()) > 0);
+    check("canvas has nodes", (await page.locator(".react-flow__node").count()) > 0);
+  } else {
+    check("a workflow card exists to open", false);
   }
 
   // Executions
