@@ -21,6 +21,15 @@ const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
 
 try {
+  // Auth: every route is gated, so sign up first (unique email per run).
+  await page.goto(`${APP}/signup`, { waitUntil: "networkidle", timeout: 60000 });
+  const email = `smoke+${Date.now()}@example.com`;
+  await page.fill('input[type="email"]', email);
+  await page.fill('input[type="password"]', "smoketest123");
+  await page.click('button[type="submit"]');
+  await page.waitForURL(/\/workflows$/, { timeout: 35000 }).catch(() => {});
+  check("signup → authenticated app", /\/workflows/.test(page.url()));
+
   // Home + copilot widget
   await page.goto(APP, { waitUntil: "networkidle", timeout: 60000 });
   check("home renders (nav)", (await page.locator("text=DClaw Flow").count()) > 0);

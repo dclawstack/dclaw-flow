@@ -1,10 +1,18 @@
+import { clearToken, getToken } from "@/lib/auth";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getToken();
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...init,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...init?.headers,
+    },
   });
+  if (res.status === 401) clearToken();
   if (!res.ok) {
     const err = await res.text();
     throw new Error(err || `HTTP ${res.status}`);
@@ -23,6 +31,17 @@ export interface ExecutionList {
 }
 
 export const api = {
+  signup: (email: string, password: string) =>
+    fetchJson<import("@/types").TokenResponse>("/api/v1/flows/auth/signup", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }),
+  login: (email: string, password: string) =>
+    fetchJson<import("@/types").TokenResponse>("/api/v1/flows/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }),
+  getMe: () => fetchJson<import("@/types").AuthUser>("/api/v1/flows/auth/me"),
   listWorkflows: () => fetchJson<WorkflowList>("/api/v1/flows/workflows"),
   listTemplates: () =>
     fetchJson<import("@/types").WorkflowTemplate[]>(
