@@ -155,3 +155,28 @@ class NodeExecution(Base):
     )
 
     execution: Mapped["Execution"] = relationship(back_populates="node_executions")
+
+
+class Connection(Base):
+    """A per-user, token-based third-party credential (secret encrypted at rest)."""
+
+    __tablename__ = "connections"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    connector_type: Mapped[str] = mapped_column(String, nullable=False)
+    encrypted_secret: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=now_utc,
+    )

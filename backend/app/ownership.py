@@ -8,7 +8,7 @@ import uuid
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Execution, User, Workflow
+from app.models import Connection, Execution, User, Workflow
 
 
 async def get_owned_workflow(
@@ -20,6 +20,17 @@ async def get_owned_workflow(
             status_code=status.HTTP_404_NOT_FOUND, detail="Workflow not found"
         )
     return workflow
+
+
+async def get_owned_connection(
+    db: AsyncSession, connection_id: uuid.UUID, user: User
+) -> Connection:
+    connection = await db.get(Connection, connection_id)
+    if connection is None or connection.owner_id != user.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Connection not found"
+        )
+    return connection
 
 
 async def get_owned_execution(
