@@ -13,8 +13,8 @@ def test_password_hash_roundtrip():
 
 
 @pytest.mark.asyncio
-async def test_signup_returns_token_and_user(client):
-    r = await client.post(
+async def test_signup_returns_token_and_user(anon_client):
+    r = await anon_client.post(
         "/api/v1/flows/auth/signup",
         json={"email": "Alice@Example.com", "password": "supersecret"},
     )
@@ -26,17 +26,17 @@ async def test_signup_returns_token_and_user(client):
 
 
 @pytest.mark.asyncio
-async def test_duplicate_email_rejected(client):
+async def test_duplicate_email_rejected(anon_client):
     payload = {"email": "dupe@example.com", "password": "supersecret"}
-    first = await client.post("/api/v1/flows/auth/signup", json=payload)
+    first = await anon_client.post("/api/v1/flows/auth/signup", json=payload)
     assert first.status_code == 201
-    second = await client.post("/api/v1/flows/auth/signup", json=payload)
+    second = await anon_client.post("/api/v1/flows/auth/signup", json=payload)
     assert second.status_code == 409
 
 
 @pytest.mark.asyncio
-async def test_short_password_rejected(client):
-    r = await client.post(
+async def test_short_password_rejected(anon_client):
+    r = await anon_client.post(
         "/api/v1/flows/auth/signup",
         json={"email": "shorty@example.com", "password": "tiny"},
     )
@@ -44,25 +44,25 @@ async def test_short_password_rejected(client):
 
 
 @pytest.mark.asyncio
-async def test_login_success_and_wrong_password(client):
-    await client.post(
+async def test_login_success_and_wrong_password(anon_client):
+    await anon_client.post(
         "/api/v1/flows/auth/signup",
         json={"email": "bob@example.com", "password": "supersecret"},
     )
-    ok = await client.post(
+    ok = await anon_client.post(
         "/api/v1/flows/auth/login",
         json={"email": "bob@example.com", "password": "supersecret"},
     )
     assert ok.status_code == 200
     assert ok.json()["access_token"]
 
-    bad = await client.post(
+    bad = await anon_client.post(
         "/api/v1/flows/auth/login",
         json={"email": "bob@example.com", "password": "nope"},
     )
     assert bad.status_code == 401
 
-    unknown = await client.post(
+    unknown = await anon_client.post(
         "/api/v1/flows/auth/login",
         json={"email": "ghost@example.com", "password": "whatever1"},
     )
@@ -70,24 +70,24 @@ async def test_login_success_and_wrong_password(client):
 
 
 @pytest.mark.asyncio
-async def test_me_requires_and_returns_user(client):
+async def test_me_requires_and_returns_user(anon_client):
     token = (
-        await client.post(
+        await anon_client.post(
             "/api/v1/flows/auth/signup",
             json={"email": "carol@example.com", "password": "supersecret"},
         )
     ).json()["access_token"]
 
-    me = await client.get(
+    me = await anon_client.get(
         "/api/v1/flows/auth/me",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert me.status_code == 200
     assert me.json()["email"] == "carol@example.com"
 
-    assert (await client.get("/api/v1/flows/auth/me")).status_code == 401
+    assert (await anon_client.get("/api/v1/flows/auth/me")).status_code == 401
     assert (
-        await client.get(
+        await anon_client.get(
             "/api/v1/flows/auth/me",
             headers={"Authorization": "Bearer not-a-real-token"},
         )

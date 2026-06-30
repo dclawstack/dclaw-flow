@@ -11,9 +11,11 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import get_current_user
 from app.config import settings
 from app.database import get_db
-from app.models import Execution, NodeExecution, Workflow
+from app.models import Execution, NodeExecution, User, Workflow
+from app.ownership import get_owned_execution
 from app.schemas import ExecutionListResponse, ExecutionResponse
 from app.services.anomaly import detect_anomalies
 from app.services.copilot import analyze_failure
@@ -32,9 +34,15 @@ async def list_executions(
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, Any]:
     """List executions, filterable by workflow, status, date range, or step."""
-    conditions = []
+    # Scope to executions of workflows the caller owns.
+    conditions = [
+        Execution.workflow_id.in_(
+            select(Workflow.id).where(Workflow.owner_id == current_user.id)
+        )
+    ]
     if workflow_id:
         conditions.append(Execution.workflow_id == workflow_id)
     if status:
@@ -84,28 +92,19 @@ async def cleanup_executions(
 async def get_execution(
     execution_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Execution:
-    execution = await db.get(Execution, execution_id)
-    if not execution:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Execution not found",
-        )
-    return execution
+    return await get_owned_execution(db, execution_id, current_user)
 
 
 @router.get("/{execution_id}/anomalies")
 async def get_execution_anomalies(
     execution_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, list[str]]:
     """Deterministic anomaly flags for an execution, vs its workflow's history."""
-    execution = await db.get(Execution, execution_id)
-    if not execution:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Execution not found",
-        )
+    execution = await get_owned_execution(db, execution_id, current_user)
     result = await db.execute(
         select(Execution)
         .where(Execution.workflow_id == execution.workflow_id)
@@ -120,14 +119,10 @@ async def get_execution_anomalies(
 async def get_execution_root_cause(
     execution_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict[str, str]:
     """Plain-language 'why did this fail' (LLM with deterministic fallback)."""
-    execution = await db.get(Execution, execution_id)
-    if not execution:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Execution not found",
-        )
+    execution = await get_owned_execution(db, execution_id, current_user)
     if execution.status != "failed":
         return {"explanation": "No failure to analyze.", "source": "heuristic"}
 
@@ -145,13 +140,9 @@ async def get_execution_root_cause(
 async def cancel_execution(
     execution_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> Execution:
-    execution = await db.get(Execution, execution_id)
-    if not execution:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Execution not found",
-        )
+    execution = await get_owned_execution(db, execution_id, current_user)
     if execution.status in ("completed", "failed", "cancelled"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -168,13 +159,9 @@ async def cancel_execution(
 async def stream_execution(
     execution_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
-    execution = await db.get(Execution, execution_id)
-    if not execution:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Execution not found",
-        )
+    await get_owned_execution(db, execution_id, current_user)
 
     async def event_generator() -> Any:
         seen: dict[str, str] = {}
