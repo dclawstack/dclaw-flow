@@ -1,5 +1,6 @@
 """FastAPI application entrypoint."""
 
+import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -20,6 +21,7 @@ from app.observability import (
 from app.ratelimit import limiter
 from app.routers import auth, copilot, executions, webhooks, workflows
 from app.seed import seed_data
+from app.services.queue import recover_orphans, worker_loop
 
 configure_logging(settings.log_level)
 
@@ -33,7 +35,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     for issue in settings.insecure_config_warnings():
         logger.warning("insecure_config", issue=issue)
     logger.info("startup", env=settings.app_env)
+
+    worker_task: asyncio.Task | None = None
+    stop = asyncio.Event()
+    if settings.queue_worker_enabled:
+        recovered = await recover_orphans()
+        if recovered:
+            logger.warning("executions_recovered_failed", count=recovered)
+        worker_task = asyncio.create_task(worker_loop(stop))
+
     yield
+
+    stop.set()
+    if worker_task is not None:
+        await worker_task
     await engine.dispose()
 
 

@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24 * 7  # 7 days
 
+    # --- Durable execution queue ---
+    queue_worker_enabled: bool = True
+    queue_poll_seconds: float = 2.0
+    queue_lease_seconds: int = 600  # claim lease; also the crash-recovery window
+    queue_max_attempts: int = 3  # dead-letter a job after this many claims
+
     # --- AI Flow Copilot (P0.1) ---
     # Provider order for natural-language workflow generation. "auto" tries the
     # local Ollama model first, then the OpenRouter cloud model, then falls back

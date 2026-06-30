@@ -5,12 +5,25 @@ import uuid
 from sqlalchemy import select
 
 from app.database import AsyncSessionLocal
-from app.models import Workflow
+from app.models import SYSTEM_USER_ID, User, Workflow
 
 
 async def seed_data() -> None:
-    """Create a sample workflow if none exists."""
+    """Create the system user and a sample workflow if missing."""
     async with AsyncSessionLocal() as db:
+        # The system user owns seed/pre-auth workflows. Migration 006 also
+        # creates it; on a create_all-only DB (local dev) this is the only place
+        # it's made, and the workflow owner FK depends on it existing.
+        if await db.get(User, SYSTEM_USER_ID) is None:
+            db.add(
+                User(
+                    id=SYSTEM_USER_ID,
+                    email="system@dclaw.local",
+                    hashed_password="!",
+                )
+            )
+            await db.commit()
+
         result = await db.execute(select(Workflow).limit(1))
         existing = result.scalar_one_or_none()
         if existing:

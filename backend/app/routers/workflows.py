@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_user
-from app.database import AsyncSessionLocal, get_db
+from app.database import get_db
 from app.models import Execution, User, Workflow
 from app.ownership import get_owned_workflow
 from app.schemas import (
@@ -23,7 +23,7 @@ from app.schemas import (
     WorkflowUpdate,
 )
 from app.services.engine import validate_workflow
-from app.services.executor import execute_workflow
+from app.services.queue import run_execution_durable
 from app.templates import list_templates
 
 router = APIRouter(prefix="/workflows", tags=["workflows"])
@@ -158,7 +158,8 @@ async def execute_workflow_endpoint(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> Execution:
-    workflow = await get_owned_workflow(db, workflow_id, current_user)
+    # Ownership check (raises 404 if not the caller's workflow).
+    await get_owned_workflow(db, workflow_id, current_user)
 
     execution = Execution(
         workflow_id=workflow_id,
@@ -170,16 +171,12 @@ async def execute_workflow_endpoint(
     await db.commit()
     await db.refresh(execution)
 
+    # Both paths claim the job (so the queue worker won't double-run it); the
+    # sync path awaits it, the async path lets the worker/task drive it.
     if data.wait_for_completion:
-        await execute_workflow(db, workflow, execution)
+        await run_execution_durable(execution.id)
         await db.refresh(execution)
     else:
-        asyncio.create_task(run_execution(workflow, execution))
+        asyncio.create_task(run_execution_durable(execution.id))
 
     return execution
-
-
-async def run_execution(workflow: Workflow, execution: Execution) -> None:
-    """Run execution in background with a fresh session."""
-    async with AsyncSessionLocal() as session:
-        await execute_workflow(session, workflow, execution)
