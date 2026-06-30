@@ -28,6 +28,18 @@ export interface TriggerConfig {
   config: Record<string, unknown>;
 }
 
+export interface AuthUser {
+  id: string;
+  email: string;
+  created_at: string;
+}
+
+export interface TokenResponse {
+  access_token: string;
+  token_type: string;
+  user: AuthUser;
+}
+
 export interface WorkflowTemplate {
   id: string;
   name: string;
