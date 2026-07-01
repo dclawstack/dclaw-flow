@@ -3,7 +3,7 @@
 import asyncio
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_user
 from app.config import settings
 from app.database import get_db
-from app.models import Execution, NodeExecution, User, Workflow
+from app.models import Connection, Execution, NodeExecution, User, Workflow
 from app.ownership import get_owned_execution
 from app.schemas import ExecutionListResponse, ExecutionResponse
 from app.services.anomaly import detect_anomalies
@@ -69,6 +69,60 @@ async def list_executions(
         select(func.count()).select_from(Execution).where(*conditions)
     )
     return {"items": executions, "total": total or 0}
+
+
+@router.get("/stats")
+async def execution_stats(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Owner-scoped dashboard aggregates (defined before /{execution_id})."""
+    owned_workflows = select(Workflow.id).where(Workflow.owner_id == current_user.id)
+    in_owned = Execution.workflow_id.in_(owned_workflows)
+
+    workflows = await db.scalar(
+        select(func.count()).select_from(Workflow).where(
+            Workflow.owner_id == current_user.id
+        )
+    )
+    connections = await db.scalar(
+        select(func.count()).select_from(Connection).where(
+            Connection.owner_id == current_user.id
+        )
+    )
+
+    status_rows = await db.execute(
+        select(Execution.status, func.count())
+        .where(in_owned)
+        .group_by(Execution.status)
+    )
+    by_status = dict(status_rows.all())
+    total_exec = sum(by_status.values())
+    finished = by_status.get("completed", 0) + by_status.get("failed", 0)
+    success_rate = by_status.get("completed", 0) / finished if finished else None
+
+    since = datetime.now(timezone.utc) - timedelta(days=13)
+    day = func.date_trunc("day", Execution.started_at)
+    per_day_rows = await db.execute(
+        select(day.label("day"), func.count())
+        .where(in_owned, Execution.started_at >= since)
+        .group_by(day)
+        .order_by(day)
+    )
+    per_day = [
+        {"date": d.date().isoformat(), "count": c} for d, c in per_day_rows.all()
+    ]
+
+    return {
+        "totals": {
+            "workflows": workflows or 0,
+            "executions": total_exec,
+            "connections": connections or 0,
+        },
+        "by_status": by_status,
+        "success_rate": success_rate,
+        "per_day": per_day,
+    }
 
 
 @router.post("/admin/cleanup")

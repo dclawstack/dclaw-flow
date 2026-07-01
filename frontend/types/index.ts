@@ -40,6 +40,13 @@ export interface TokenResponse {
   user: AuthUser;
 }
 
+export interface DashboardStats {
+  totals: { workflows: number; executions: number; connections: number };
+  by_status: Record<string, number>;
+  success_rate: number | null;
+  per_day: { date: string; count: number }[];
+}
+
 export interface Connection {
   id: string;
   name: string;

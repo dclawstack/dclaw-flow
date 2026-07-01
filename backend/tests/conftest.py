@@ -1,4 +1,7 @@
+# ruff: noqa: E402  (TESTING must be set before the app engine is imported)
 import os
+
+os.environ.setdefault("TESTING", "1")
 
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
