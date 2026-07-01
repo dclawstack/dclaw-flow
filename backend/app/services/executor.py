@@ -14,12 +14,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.connectors import run_connector
 from app.crypto import decrypt_json
+from app.database import AsyncSessionLocal
 from app.models import Connection, Execution, NodeExecution, Workflow
 from app.observability import EXECUTIONS, logger
-from app.services.engine import topological_sort
+from app.services.engine import topological_levels
 from app.services.http_action import run_http_action
 
 _alert_tasks: set[asyncio.Task[None]] = set()
+
+# Bound concurrent node execution so a wide fan-out can't exhaust the DB pool.
+_MAX_CONCURRENCY = 10
 
 
 async def execute_workflow(
@@ -43,7 +47,7 @@ async def execute_workflow(
     node_map = {node["id"]: node for node in nodes}
 
     try:
-        order = topological_sort(nodes, edges)
+        levels = topological_levels(nodes, edges)
     except ValueError as e:
         execution.status = "failed"
         execution.error = {"message": str(e)}
@@ -60,41 +64,107 @@ async def execute_workflow(
     outputs: dict[str, dict[str, Any]] = {}
     active: set[str] = set()
     failed: set[str] = set()
+    sem = asyncio.Semaphore(_MAX_CONCURRENCY)
 
-    for node_id in order:
-        node = node_map[node_id]
-        node_edges = incoming.get(node_id, [])
-        is_entry = node.get("type") == "trigger"
-        node_active = is_entry or any(
-            _edge_active(edge, active, failed, outputs) for edge in node_edges
-        )
-
-        if not node_active:
-            db.add(
-                NodeExecution(
-                    execution_id=execution.id,
-                    node_id=node_id,
-                    status="skipped",
-                )
+    for level in levels:
+        # Independent nodes in a level run concurrently. Activation is decided
+        # from earlier levels' state, so it's stable within the level; skipped
+        # nodes are recorded on the shared session (sequential, no race).
+        to_run: list[dict[str, Any]] = []
+        for node_id in level:
+            node = node_map[node_id]
+            node_edges = incoming.get(node_id, [])
+            is_entry = node.get("type") == "trigger"
+            node_active = is_entry or any(
+                _edge_active(edge, active, failed, outputs) for edge in node_edges
             )
-            await db.commit()
+            if not node_active:
+                db.add(
+                    NodeExecution(
+                        execution_id=execution.id,
+                        node_id=node_id,
+                        status="skipped",
+                    )
+                )
+                await db.commit()
+            else:
+                to_run.append(node)
+
+        if not to_run:
             continue
 
-        policy = node.get("retry") or {}
-        max_attempts = _retry_max(policy)
-        succeeded = False
-        last_error = ""
+        snapshot = dict(outputs)
+        results = await asyncio.gather(
+            *[
+                _run_single_node(sem, node, snapshot, workflow, execution.id)
+                for node in to_run
+            ]
+        )
 
+        # Apply results in a stable order; fail-fast on the first uncaught error.
+        for result in results:
+            node_id = result["node_id"]
+            outputs[node_id] = result["output"]
+            if result["status"] == "completed":
+                active.add(node_id)
+                continue
+            failed.add(node_id)
+            error_edges = [
+                e
+                for e in edges
+                if e.get("source") == node_id and e.get("kind") == "error"
+            ]
+            caught = any(_edge_active(e, active, failed, outputs) for e in error_edges)
+            if not caught:
+                execution.status = "failed"
+                execution.error = {
+                    "node_id": node_id,
+                    "message": result["error"],
+                    "attempts": result["attempts"],
+                }
+                execution.completed_at = datetime.now(timezone.utc)
+                await db.commit()
+                EXECUTIONS.labels("failed").inc()
+                logger.info(
+                    "execution_failed",
+                    execution_id=str(execution.id),
+                    node_id=node_id,
+                    attempts=result["attempts"],
+                )
+                _fire_alert(_alert_payload(workflow, execution))
+                return
+            # Caught by an error/fallback path — continue with the next level.
+
+    execution.status = "completed"
+    execution.completed_at = datetime.now(timezone.utc)
+    await db.commit()
+    EXECUTIONS.labels("completed").inc()
+
+
+async def _run_single_node(
+    sem: asyncio.Semaphore,
+    node: dict[str, Any],
+    outputs: dict[str, dict[str, Any]],
+    workflow: Workflow,
+    execution_id: uuid.UUID,
+) -> dict[str, Any]:
+    """Run one node (with its retry policy) in its own session so siblings can
+    run concurrently. Returns {node_id, status, output, [error, attempts]}."""
+    node_id = node["id"]
+    policy = node.get("retry") or {}
+    max_attempts = _retry_max(policy)
+    last_error = ""
+
+    async with sem, AsyncSessionLocal() as db:
         for attempt in range(1, max_attempts + 1):
             node_exec = NodeExecution(
-                execution_id=execution.id,
+                execution_id=execution_id,
                 node_id=node_id,
                 status="running",
                 attempt_number=attempt,
             )
             db.add(node_exec)
             await db.commit()
-
             try:
                 node_input = build_node_input(node, outputs)
                 node_exec.input = node_input
@@ -104,14 +174,11 @@ async def execute_workflow(
                     db, node, node_input, workflow.owner_id
                 )
                 output = await run_node(node, run_input)
-                outputs[node_id] = output
-                active.add(node_id)
 
                 node_exec.status = "completed"
                 node_exec.output = output
                 await db.commit()
-                succeeded = True
-                break
+                return {"node_id": node_id, "status": "completed", "output": output}
             except Exception as e:
                 last_error = str(e)
                 node_exec.status = "failed"
@@ -120,46 +187,13 @@ async def execute_workflow(
                 if attempt < max_attempts:
                     await asyncio.sleep(_backoff_delay(policy, attempt))
 
-        if not succeeded:
-            failed.add(node_id)
-            # Expose the failure so error edges / recovery nodes can use it.
-            outputs[node_id] = {
-                "error": last_error,
-                "failed": True,
-                "attempts": max_attempts,
-            }
-            error_edges = [
-                e
-                for e in edges
-                if e.get("source") == node_id and e.get("kind") == "error"
-            ]
-            caught = any(
-                _edge_active(e, active, failed, outputs) for e in error_edges
-            )
-            if not caught:
-                execution.status = "failed"
-                execution.error = {
-                    "node_id": node_id,
-                    "message": last_error,
-                    "attempts": max_attempts,
-                }
-                execution.completed_at = datetime.now(timezone.utc)
-                await db.commit()
-                EXECUTIONS.labels("failed").inc()
-                logger.info(
-                    "execution_failed",
-                    execution_id=str(execution.id),
-                    node_id=node_id,
-                    attempts=max_attempts,
-                )
-                _fire_alert(_alert_payload(workflow, execution))
-                return
-            # Caught by an error/fallback path — continue the topo loop.
-
-    execution.status = "completed"
-    execution.completed_at = datetime.now(timezone.utc)
-    await db.commit()
-    EXECUTIONS.labels("completed").inc()
+    return {
+        "node_id": node_id,
+        "status": "failed",
+        "output": {"error": last_error, "failed": True, "attempts": max_attempts},
+        "error": last_error,
+        "attempts": max_attempts,
+    }
 
 
 def _edge_active(
@@ -307,6 +341,12 @@ async def run_node(
     if node_type == "transform":
         mapping = config.get("mapping", {})
         return apply_transform(mapping, node_input)
+
+    if node_type == "merge":
+        # A join point: its resolved config (with {{node.key}} refs to the
+        # incoming branches) becomes the combined output. It runs after all
+        # branches because topological levels place it in a later level.
+        return node_input
 
     return {"result": "noop"}
 

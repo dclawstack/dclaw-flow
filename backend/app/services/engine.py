@@ -66,6 +66,45 @@ def topological_sort(
     return result
 
 
+def topological_levels(
+    nodes: list[dict[str, Any]],
+    edges: list[dict[str, Any]],
+) -> list[list[str]]:
+    """Group node IDs into dependency levels (Kahn's algorithm by rank).
+
+    Nodes in the same level have no dependency between them and can run
+    concurrently; every node's dependencies sit in strictly earlier levels.
+    Flattening the levels yields a valid topological order. Raises on a cycle.
+    """
+    graph: dict[str, list[str]] = defaultdict(list)
+    in_degree: dict[str, int] = {node["id"]: 0 for node in nodes}
+    for edge in edges:
+        source = edge.get("source")
+        target = edge.get("target")
+        if source and target:
+            graph[source].append(target)
+            in_degree[target] += 1
+
+    levels: list[list[str]] = []
+    current = sorted(node_id for node_id, degree in in_degree.items() if degree == 0)
+    seen = 0
+    while current:
+        levels.append(current)
+        nxt: list[str] = []
+        for node_id in current:
+            seen += 1
+            for neighbor in graph[node_id]:
+                in_degree[neighbor] -= 1
+                if in_degree[neighbor] == 0:
+                    nxt.append(neighbor)
+        current = sorted(nxt)
+
+    if seen != len(nodes):
+        raise ValueError("Workflow contains cycles")
+
+    return levels
+
+
 def find_unreachable_nodes(
     nodes: list[dict[str, Any]],
     edges: list[dict[str, Any]],
