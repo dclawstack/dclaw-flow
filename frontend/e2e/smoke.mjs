@@ -30,9 +30,11 @@ try {
   await page.waitForURL(/\/workflows$/, { timeout: 35000 }).catch(() => {});
   check("signup → authenticated app", /\/workflows/.test(page.url()));
 
-  // Home + copilot widget
+  // Home dashboard + copilot widget
   await page.goto(APP, { waitUntil: "networkidle", timeout: 60000 });
+  await page.waitForTimeout(1500);
   check("home renders (nav)", (await page.locator("text=DClaw Flow").count()) > 0);
+  check("dashboard stats render", (await page.textContent("body")).includes("Success rate"));
   await page.locator('button[aria-label="Open Flow Copilot"]').click();
   await page.waitForTimeout(800);
   check("copilot widget opens", (await page.locator("text=Flow Copilot").count()) > 0);

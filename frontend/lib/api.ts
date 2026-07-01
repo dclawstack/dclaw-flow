@@ -62,6 +62,10 @@ export const api = {
       method: "DELETE",
       headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
     }),
+  getStats: () =>
+    fetchJson<import("@/types").DashboardStats>(
+      "/api/v1/flows/executions/stats",
+    ),
   listWorkflows: () => fetchJson<WorkflowList>("/api/v1/flows/workflows"),
   listTemplates: () =>
     fetchJson<import("@/types").WorkflowTemplate[]>(
